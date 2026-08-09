@@ -8,6 +8,9 @@ param resourceGroupName string = 'progettocloud-rg'
 @description('Regione Azure per tutte le risorse')
 param location string = 'italynorth'
 
+@description('Regione Azure per Azure OpenAI. Impostata a italynorth per conformità con la policy Azure for Students UniCal (regioni esterne bloccate). I deployment dei modelli vengono gestiti manualmente via Azure AI Studio.')
+param openAiLocation string = 'italynorth'
+
 @description('Prefisso breve per i nomi delle risorse (3-8 caratteri, solo minuscole e numeri)')
 @minLength(3)
 @maxLength(8)
@@ -58,7 +61,7 @@ module openai 'modules/openai.bicep' = {
   name: 'openaiDeployment'
   scope: rg
   params: {
-    location: location
+    location: openAiLocation // Regione separata: italynorth non supporta i modelli OpenAI richiesti
     prefix: prefix
   }
 }

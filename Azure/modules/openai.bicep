@@ -1,10 +1,22 @@
 // Azure OpenAI Service
-// Crea l'account Azure OpenAI e il deployment
-// dei modelli:
-// - text-embedding-ada-002 (embedding chunk/query)
-// - gpt-4o-mini (generazione metadati AI + RAG)
+// Crea il solo account Microsoft.CognitiveServices (kind: 'OpenAI', SKU: 'S0').
+//
+// NOTA ARCHITETTURALE — Policy Azure for Students (Università della Calabria):
+// La sottoscrizione Azure for Students impone l'uso esclusivo della regione
+// italynorth e blocca regioni esterne (es. swedencentral, westeurope).
+// Per questa ragione il provisioning automatico dei sub-deployment dei modelli
+// (text-embedding-ada-002 / text-embedding-3-small e gpt-4o-mini) è stato
+// rimosso da questo modulo Bicep.
+//
+// I deployment dei modelli vengono distribuiti MANUALMENTE tramite:
+//   → Azure AI Studio: https://ai.azure.com
+//   → Portale Azure: portale.azure.com → risorsa OpenAI → Model deployments
+//
+// Modelli da distribuire manualmente:
+//   • text-embedding-ada-002 (v2) o text-embedding-3-small — SKU: Standard
+//   • gpt-4o-mini (2024-07-18) — SKU: Standard
 
-@description('Regione Azure — deve supportare Azure OpenAI')
+@description('Regione Azure per l\'account OpenAI. Deve rispettare le policy della sottoscrizione (italynorth per Azure for Students UniCal).')
 param location string
 
 @description('Prefisso per il nome della risorsa')
@@ -12,7 +24,9 @@ param prefix string
 
 var openAiAccountName = '${prefix}-openai-${take(uniqueString(resourceGroup().id), 8)}'
 
-// AZURE OPENAI SERVICE
+// AZURE OPENAI SERVICE — solo account base
+// I deployment dei modelli vengono gestiti manualmente via Azure AI Studio
+// per conformità con le policy della sottoscrizione Azure for Students.
 
 resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-10-01-preview' = {
   name: openAiAccountName
@@ -27,49 +41,16 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-10-01-preview'
   }
   tags: {
     purpose: 'Generazione metadati AI ed embedding RAG'
+    note: 'Model deployments gestiti manualmente via Azure AI Studio'
   }
 }
 
-// DEPLOYMENT: text-embedding-ada-002
-// Modello per la generazione degli embedding dei chunk
-// e delle query di ricerca (1536 dimensioni)
-
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: openAiAccount
-  name: 'text-embedding-ada-002'
-  sku: {
-    name: 'Standard'
-    capacity: 30 // Capacità in migliaia di token al minuto (TPM)
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'text-embedding-ada-002'
-      version: '2'
-    }
-  }
-}
-
-// DEPLOYMENT: gpt-4o-mini
-// Modello per la generazione automatica dei metadati
-// e per la fase di generation del sistema RAG
-
-resource gptDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-10-01-preview' = {
-  parent: openAiAccount
-  name: 'gpt-4o-mini'
-  dependsOn: [embeddingDeployment] // Deploy in sequenza per evitare conflitti di quota
-  sku: {
-    name: 'Standard'
-    capacity: 30
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: 'gpt-4o-mini'
-      version: '2024-07-18'
-    }
-  }
-}
+// DEPLOYMENT MODELLI — RIMOSSO DA BICEP (policy italynorth)
+//
+// Le risorse seguenti erano gestite via IaC ma sono state rimosse a causa
+// delle restrizioni della policy Azure for Students che impone italynorth
+// come unica regione ammessa e non supporta SKU Standard per i deployment
+// di modelli OpenAI in quella regione.
 
 // OUTPUT
 

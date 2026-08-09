@@ -235,8 +235,9 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 ### FASE 1 — Infrastruttura Azure (IaC con Bicep)
 - [ x ] **Task 1.1**: Scrittura del file `main.bicep` (scope: subscription) per il provisioning completo di tutte le risorse Azure: Resource Group `progettocloud-rg`, Blob Storage + container `articles-raw`, Cosmos DB Serverless + database + containers, Azure AI Search, Azure OpenAI Service, Azure Container Registry — strutturato in moduli separati per massima leggibilità
 - [ x ] **Task 1.2**: Scrittura del file `parameters.json` con tutti i parametri configurabili (nome RG, location, prefix, SKU)
-- [ ] **Task 1.3**: Esecuzione del deploy tramite Azure CLI (`az deployment sub create`) per creare l'intera infrastruttura in automatico
-- [ ] **Task 1.4**: Estrazione e configurazione sicura delle Connection String e API Key nel file `.env` locale (non committato)
+- [ x ] **Task 1.3**: Esecuzione del deploy tramite Azure CLI (`az deployment sub create`) — tutte le risorse infrastrutturali create con successo in **italynorth**
+- [ x ] **Task 1.4**: Estrazione e configurazione sicura delle Connection String e API Key nel file `.env` locale (non committato)
+- [ x ] **Task 1.5 — Refactoring modulo OpenAI per conformità policy Azure for Students (italynorth)**: La policy della sottoscrizione Azure for Students (Università della Calabria) impone l'uso esclusivo della regione `italynorth` e blocca qualsiasi deploy verso regioni esterne. Poiché `italynorth` non supporta il provisioning automatico dei model-deployment OpenAI tramite ARM/Bicep con SKU Standard, il modulo `openai.bicep` è stato refactorizzato per creare **soltanto l'account base** (`Microsoft.CognitiveServices/accounts`). I deployment dei modelli (`text-embedding-ada-002` e `gpt-4o-mini`) vengono distribuiti **manualmente** tramite Azure AI Studio / Portale Azure al termine del deploy IaC. Questa scelta garantisce conformità con le policy di sicurezza della sottoscrizione accademica pur mantenendo la riproducibilità dell'infrastruttura base via IaC.
 
 ### FASE 2 — Backend: Core Pipeline di Ingestion
 - [ ] **Task 2.1**: Setup FastAPI + struttura cartelle backend
