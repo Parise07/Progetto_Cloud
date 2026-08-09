@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+azure-storage-blob
+azure-cosmos
+azure-search-documents
+openai
+python-dotenv
