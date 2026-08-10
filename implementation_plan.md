@@ -241,10 +241,10 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 
 ### FASE 2 — Backend: Core Pipeline di Ingestion
 - [ x ] **Task 2.1**: Setup FastAPI + struttura cartelle backend
-- [ ] **Task 2.2**: Endpoint `POST /articles/upload` + salvataggio su Blob Storage
-- [ ] **Task 2.3**: Parser file multiformat
+- [x] **Task 2.2**: Endpoint `POST /articles/upload` + salvataggio su Blob Storage
+- [x] **Task 2.3**: Parser file multiformat
   - Obbligatori: TXT, MD, JSON
-  - Facoltativi: DOCX (`python-docx`), PRF (parser custom basato su struttura proprietaria)
+  - Facoltativi: DOCX (`python-docx`), PDF
 - [ ] **Task 2.4**: Generazione metadati AI (LangChain + Azure OpenAI)
 - [ ] **Task 2.5**: Salvataggio metadati su Cosmos DB
 - [ ] **Task 2.6**: Chunking + embedding + indicizzazione su Azure AI Search
@@ -307,22 +307,4 @@ file_picker: ^8.0.0      # Selezione file da caricare
 provider: ^6.1.0         # State management
 ```
 
----
 
-## 8. Decisioni Architetturali — APPROVATE
-
-> [!NOTE]
-> **Decisione A — Framework AI: LangChain** ✅ APPROVATA
-> Utilizziamo **LangChain** come framework AI principale per la pipeline RAG. Integrazione nativa con Azure OpenAI e Azure AI Search.
-
-> [!NOTE]
-> **Decisione B — Database Metadati: Cosmos DB (NoSQL)** ✅ APPROVATA
-> Utilizziamo **Azure Cosmos DB (API NoSQL, Serverless)** per i metadati. Schema JSON flessibile, ideale per documenti eterogenei. Preferito ad Azure Table Storage per performance e ricchezza di query.
-
-> [!NOTE]
-> **Decisione C — Infrastruttura: Azure Bicep (IaC)** ✅ APPROVATA
-> Si adotta **Azure Bicep** come strumento di Infrastructure as Code per il provisioning automatico delle risorse Azure. Questa scelta, rispetto alla creazione manuale sul portale, garantisce **riproducibilità**, **versionabilità** e **manutenibilità** dell'ambiente Cloud, allineandosi agli standard professionali del settore.
-
-> [!NOTE]
-> **Nota — Azure OpenAI vs OpenAI API diretta**
-> Per rispettare il vincolo "tutto su Azure", utilizziamo **Azure OpenAI Service** e non l'API OpenAI.com diretta. La configurazione dei deployment verrà guidata passo dopo passo sul portale Azure.

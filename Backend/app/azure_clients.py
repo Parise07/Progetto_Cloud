@@ -3,10 +3,13 @@ from azure.cosmos import CosmosClient
 from azure.search.documents.aio import SearchClient
 from openai import AzureOpenAI
 
-from app.core.config import settings
-from azure.storage.blob import BlobServiceClient
+from app.config import settings
+# Utilizziamo il client ASINCRONO di Azure Blob Storage (azure.storage.blob.aio)
+# per garantire la compatibilità con FastAPI (async/await) ed evitare il mix
+# sincrono/asincrono che causa: ValueError: 'coroutine' object is not iterable
+from azure.storage.blob.aio import BlobServiceClient as AsyncBlobServiceClient
 
-blob_service_client = BlobServiceClient.from_connection_string(settings.AZURE_STORAGE_CONNECTION_STRING)
+blob_service_client = AsyncBlobServiceClient.from_connection_string(settings.AZURE_STORAGE_CONNECTION_STRING)
 
 cosmos_client = CosmosClient(settings.COSMOS_ENDPOINT,
                              credential = settings.COSMOS_PRIMARY_KEY)

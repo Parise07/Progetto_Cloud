@@ -1,13 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.health import router as health_router
+
+from app.routers.articles import router as articles_router
+
 app = FastAPI(
-    title="Sistema Rag",
-    description= "Primo test per ceck settaggio Backend",
+    title="Sistema RAG — NewsArchive",
+    description="Backend API per l'archiviazione e ricerca intelligente di articoli. Vai su /docs per la documentazione Swagger.",
     version="1.0"
 )
 
-# configurazione CORS(per specificare quali  domini esterni sono autorizzati ad accedere)
+# Configurazione CORS (specifica quali domini esterni sono autorizzati ad accedere)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +18,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(health_router, prefix="/api/v1" ,tags=["health"])
+
+app.include_router(articles_router, prefix="", tags=["Articles"])
+
 
 @app.get("/")
 def root():
