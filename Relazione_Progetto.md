@@ -61,16 +61,114 @@ Il layer di presentazione (Frontend) è stato progettato utilizzando il framewor
 
 ## 4. Dettagli Implementativi
 
-### 4.1 Ingestion & Parsing
+### 4.1 Struttura del Backend (FastAPI)
+
+Il backend è organizzato secondo una struttura modulare a layer, che separa nettamente la configurazione, i modelli dati, i router HTTP e i servizi di business logic:
+
+```
+backend/
+├── app/
+│   ├── main.py               # Entry point FastAPI: CORS, router, health-check
+│   ├── config.py             # Settings Pydantic (lettura da .env)
+│   ├── azure_clients.py      # Singleton client SDK Azure (Blob, Cosmos, Search, OpenAI)
+│   ├── models/
+│   │   └── article.py        # Modelli Pydantic: ManualMetadata, ArticleDocument
+│   ├── routers/
+│   │   └── articles.py       # Endpoint POST /articles/upload
+│   └── services/
+│       ├── blob_service.py        # Upload su Azure Blob Storage (client asincrono)
+│       ├── cosmos_service.py      # Salvataggio metadati su Cosmos DB
+│       └── ingestion_service.py   # Parser multiformat (TXT/MD/JSON/DOCX/PDF)
+├── requirements.txt
+└── .env / .env.example
+```
+
+#### Gestione della Configurazione (`config.py`)
+La configurazione dell'applicazione è centralizzata nel modulo `config.py`, che sfrutta `pydantic-settings` (`BaseSettings`) per il caricamento tipizzato e validato delle variabili d'ambiente dal file `.env`. Questa scelta garantisce il fail-fast in fase di avvio: se una credenziale obbligatoria è assente, l'applicazione non si avvia, prevenendo errori runtime difficili da diagnosticare. Le variabili gestite includono le stringhe di connessione e le API key per tutti e quattro i servizi Azure (Blob Storage, Cosmos DB, AI Search, OpenAI).
+
+#### Client Azure Centralizzati (`azure_clients.py`)
+I client degli SDK Azure sono istanziati come singleton a livello di modulo in `azure_clients.py`. Una scelta progettuale rilevante riguarda il client di Azure Blob Storage: si è adottato il client **asincrono** (`azure.storage.blob.aio.BlobServiceClient`) anziché quello sincrono. Questa decisione è stata motivata dalla necessità di compatibilità con il runtime asincrono di FastAPI: l'uso del client sincrono all'interno di una funzione `async def` avrebbe provocato un blocco del thread dell'event loop, degradando le prestazioni sotto carico. L'uso del client asincrono garantisce che le operazioni I/O-bound verso Azure Blob non blocchino il server durante l'attesa della risposta.
+
+### 4.2 Modelli Dati (Pydantic)
+
+I modelli dati sono definiti con Pydantic in `app/models/article.py` e strutturati gerarchicamente:
+
+- **`ManualMetadata`**: Incapsula i metadati inseriti manualmente dall'utente al momento dell'upload (`title`, `author`, `category`, `description`, `tags`). Tutti i campi sono opzionali, permettendo upload parziali senza errori di validazione.
+- **`MetadataIA`**: Modello Pydantic che formalizza lo schema dei metadati generati dal modello linguistico. Definisce i campi `subtitle`, `keywords`, `category`, `language`, `summary` ed `entities`, tutti tipizzati e opzionali. La definizione di questo modello come schema Pydantic non assolve solo a una funzione di validazione: viene passato direttamente a `llm.with_structured_output(MetadataIA)` di LangChain, che utilizza lo schema JSON Schema derivato automaticamente da Pydantic per istruire il modello a produrre un output strutturato e deterministico (function calling).
+- **`ArticleDocument`**: Rappresenta il documento completo persistito su Cosmos DB. Aggrega `id`, `blob_url`, `uploaded_at`, `manual_metadata` e il campo `IA_metadata` di tipo `MetadataIA`. La struttura gerarchica e separata per tipologia di metadati garantisce massima flessibilità per evoluzione futura dello schema senza migrazioni distruttive.
+
+### 4.3 Ingestion & Parsing Multiformat (`ingestion_service.py`)
+
+Il modulo `ingestion_service.py` implementa la funzione `extract_text_from_file(file_bytes, filename)`, responsabile dell'estrazione del contenuto testuale grezzo da tutti i formati supportati:
+
+| Formato | Libreria | Strategia di estrazione |
+|---------|----------|------------------------|
+| `.txt`, `.md` | Built-in Python | Decodifica UTF-8 diretta |
+| `.json` | `json` (stdlib) | Parse + re-serializzazione come stringa |
+| `.docx` | `python-docx` | Estrazione paragrafo per paragrafo via `Document.paragraphs` |
+| `.pdf` | `PyPDF2` | Estrazione pagina per pagina via `PdfReader.pages` |
+
+Per i formati non riconosciuti viene sollevata una `ValueError` con messaggio esplicativo, che il layer superiore potrà catturare e trasformare in una risposta HTTP `400 Bad Request`.
+
+### 4.4 Endpoint di Upload (`POST /articles/upload`)
+
+L'endpoint `POST /articles/upload`, implementato in `app/routers/articles.py`, orchestra l'intera pipeline di ingestion per un singolo articolo. Il flusso eseguito è il seguente:
+
+1. **Validazione dell'input**: Verifica che il file sia presente e che il filename non sia vuoto; in caso contrario restituisce `HTTP 400`.
+2. **Generazione ID univoco**: Creazione di un UUID v4 tramite il modulo standard `uuid`, utilizzato sia come identificatore del documento su Cosmos DB sia come nome del blob (`{article_id}.{ext}`).
+3. **Upload su Azure Blob Storage**: Il contenuto binario del file viene caricato nel container `articles-raw` tramite `blob_service.uploaded_file_to_blob()`. L'operazione è `await`-ata, sfruttando il client asincrono.
+4. **Estrazione testo**: Il contenuto binario viene passato a `ingestion_service.extract_text_from_file()` per ottenere la stringa di testo grezzo su cui operano le pipeline AI successive.
+5. **Costruzione dei metadati manuali**: I campi del form (`title`, `author`, `category`, `description`, `tags`) vengono istanziati in un oggetto `ManualMetadata`. I tag, ricevuti come stringa CSV, vengono normalizzati in lista Python.
+6. **Generazione metadati AI**: Il testo estratto viene passato ad `ai_service.generate_ai_metadata()` (chiamata `await`-ata) che invoca la chain LangChain e restituisce un oggetto `MetadataIA` popolato.
+7. **Creazione del documento**: Viene costruito un oggetto `ArticleDocument` aggregando `id`, `blob_url`, timestamp UTC, `manual_metadata` e `IA_metadata`.
+8. **Persistenza su Cosmos DB**: Il documento viene serializzato in JSON tramite `.model_dump(mode='json')` e salvato su Cosmos DB tramite `cosmos_service.save_article_metadata()`.
+9. **Risposta**: L'endpoint restituisce `HTTP 201 Created` con un payload JSON contenente `status`, `message`, `filename` e `blob_url`.
+
+### 4.5 Generazione Metadati via LLM (LangChain + Azure OpenAI)
+
+La generazione automatica dei metadati rappresenta il nucleo della componente di intelligenza artificiale del sistema e risponde direttamente al requisito di traccia che impone l'"estrazione automatica di metadati descrittivi" dall'articolo caricato. Il modulo responsabile è `app/services/ai_service.py`, il cui funzionamento si articola nelle seguenti fasi.
+
+#### Definizione dello Schema di Output (Pydantic + Structured Output)
+
+Il primo elemento architetturale rilevante è la definizione del modello `MetadataIA` in `app/models/article.py` come schema Pydantic. Tale modello descrive formalmente i sei campi di metadati che il sistema deve estrarre:
+
+| Campo | Tipo | Semantica |
+|-------|------|-----------|
+| `subtitle` | `str` | Sottotitolo editoriale sintetico dell'articolo |
+| `summary` | `str` | Riassunto dei contenuti principali (2-4 frasi) |
+| `keywords` | `List[str]` | Parole chiave tematiche estratte dal testo |
+| `category` | `List[str]` | Categorie giornalistiche (es. Politica, Economia) |
+| `language` | `str` | Lingua rilevata dell'articolo (es. `it`, `en`) |
+| `entities` | `List[str]` | Entità nominate: persone, luoghi, organizzazioni (formato `"tipo: nome"`) |
+
+Lo schema Pydantic viene passato al metodo `llm.with_structured_output(MetadataIA)` di LangChain, che utilizza la funzionalità di **function calling** dell'API di Azure OpenAI per vincolare il modello linguistico a produrre un output JSON strettamente conforme allo schema derivato automaticamente da Pydantic. Questo approccio elimina la necessità di parsing manuale dell'output testuale e garantisce che il JSON restituito sia sempre deserializzabile nell'oggetto `MetadataIA`, con validazione automatica dei tipi da parte di Pydantic.
+
+#### Costruzione della Chain LangChain (Prompt → LLM Strutturato)
+
+L'orchestrazione della pipeline di generazione avviene tramite LangChain, secondo il pattern LCEL (LangChain Expression Language), che compone i componenti della chain tramite l'operatore `|`:
+
+```python
+ai_metadata_chain = prompt | structured_llm
+```
+
+Il `ChatPromptTemplate` definisce due messaggi:
+- **System message**: istruisce il modello sul suo ruolo di "assistente editoriale esperto", stabilisce l'obiettivo dell'analisi e vincola il formato della risposta.
+- **Human message**: inietta dinamicamente il testo dell'articolo estratto dal parser tramite la variabile `{text_content}`.
+
+La chain viene invocata in modalità asincrona tramite il metodo `ainvoke()`, garantendo la compatibilità con il runtime `asyncio` di FastAPI senza bloccare il thread del server durante l'attesa della risposta da Azure OpenAI.
+
+#### Integrazione nella Pipeline di Upload
+
+Nella pipeline dell'endpoint `POST /articles/upload`, dopo l'estrazione del testo tramite il parser multiformat, il testo grezzo viene passato alla funzione `generate_ai_metadata(text_content)`. Il risultato, un oggetto `MetadataIA` validato da Pydantic, viene inserito nel campo `IA_metadata` dell'`ArticleDocument` e persistito su Cosmos DB insieme ai metadati manuali. Il documento finale su Cosmos DB contiene quindi, per ogni articolo, sia i metadati forniti dall'utente sia quelli generati automaticamente dall'LLM, in un unico documento JSON dalla struttura gerarchica estensibile.
+
+#### Gestione degli Errori
+
+In caso di errore durante l'invocazione del modello (es. timeout, quota esaurita, risposta malformata), la funzione `generate_ai_metadata` solleva una `HTTPException` con codice `503 Service Unavailable` e un messaggio esplicativo. Questa strategia di gestione degli errori è preferibile rispetto al rilancio di un'eccezione generica non gestita, in quanto garantisce che FastAPI restituisca sempre una risposta HTTP con codice e corpo controllati, migliorando la diagnosticabilità del sistema in produzione.
+
+### 4.6 Chunking ed Embedding
 *(Da completare in seguito)*
 
-### 4.2 Generazione metadati via LLM
-*(Da completare in seguito)*
-
-### 4.3 Chunking ed Embedding
-*(Da completare in seguito)*
-
-### 4.4 Motore RAG e risposta finale
+### 4.7 Motore RAG e risposta finale
 *(Da completare in seguito)*
 
 ## 5. Trasparenza IA e Metodologia di Sviluppo
@@ -89,6 +187,8 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
 1. **Validazione e sintassi delle chiavi d'infrastruttura:** Verifica e cross-check tra i dati restituiti dai comandi Azure CLI (Connection String di Storage, Primary Key di Cosmos DB, Admin Key di AI Search, API Key di OpenAI, endpoint di servizio) e le variabili d'ambiente esposte dagli SDK Python (`azure-storage-blob`, `azure-cosmos`, `azure-search-documents`, `langchain-openai`). Questo intervento ha prevenuto errori formali nella formattazione delle stringhe di connessione e garantito l'adozione delle convenzioni di naming previste dal backend.
 2. **Sicurezza e Gestione dei Segreti:** L'agente ha verificato la presenza delle regole di esclusione all'interno del file `.gitignore` per evitare l'upload accidentale del file `backend/.env` contenente credenziali riservate nella repository remota. Contestualmente, è stato generato il file `backend/.env.example`, privo di informazioni sensibili, come modello di riferimento per il versionamento del codice.
 
+
+
 ---
 ### 5.1 Registro delle Interazioni (Log degli Agenti AI)
 | Feature / Task | Agente Utilizzato | Prompt Principale Fornito | Sintesi Risposta / Codice Generato |
@@ -96,6 +196,8 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
  Revisione IaC Bicep, Commenti e README | Claude Sonnet 4.6 | "Agente, verifica la correttezza e l'ottimizzazione dei file Bicep per l'infrastruttura Azure. Aggiungi commenti esplicativi dettagliati all'interno del codice `.bicep` e genera il file `README.md` con le istruzioni per il deploy tramite Azure CLI." | Validazione degli script Bicep con inserimento di commenti esplicativi sulle singole risorse. Generazione del file `README.md` contenente i comandi `az login`, `az group create` e `az deployment` per il provisioning automatico dell'ambiente. |
  Refactoring modulo Bicep OpenAI — conformità region policy italynorth | Claude Sonnet 4.6 | "Adatta la configurazione Bicep per la risorsa Azure OpenAI a causa delle restrizioni della policy della sottoscrizione Azure for Students UniCal (italynorth obbligatorio, regioni esterne bloccate). Il modulo deve creare solo l'account base; i deployment dei modelli vengono gestiti manualmente via Azure AI Studio." | Refactoring di `openai.bicep`: rimossi i blocchi `embeddingDeployment` e `gptDeployment` (lasciati in commento per riferimento); aggiornati `main.bicep` (default `openAiLocation = 'italynorth'`), `parameters.json`, `README.md` (aggiunta sezione deployment manuale con tabella modelli), `implementation_plan.md` (Task 1.5 completato) e `Relazione_Progetto.md` (sezione Azure OpenAI + log). |
  Verifica formattazione e mappatura file .env | Claude Sonnet 4.6 | "Agente, ho completato il deploy Bicep ed eseguito i comandi Azure CLI. Genera o aggiorna il file backend/.env e backend/.env.example, mappando le variabili d'ambiente necessarie per il backend Python secondo la struttura esposta da Bicep (Storage, Cosmos, Search, OpenAI, ACR) e verificando il .gitignore." | Controllata e validata la sintassi delle variabili d'ambiente. Verificata la corrispondenza con i client del backend Python e generato il file .env.example privo di credenziali segrete per il commit su Git. |
+ Code Review e Task 2.4 — Generazione metadati AI (LangChain + Azure OpenAI) | Claude Sonnet 4.6 | "Esegui code review architetturale e funzionale del Task 2.4. Verifica l'integrazione con AzureChatOpenAI e LangChain, l'uso di Pydantic per output JSON strutturato, la gestione degli errori e i conflitti con il runtime asincrono di FastAPI. Aggiorna implementation_plan.md e scrivi la sezione 4.5 della relazione." | Identificati e corretti 3 bug: (1) `await` mancante su `generate_ai_metadata()` in `articles.py` (coroutine mai eseguita); (2) nome variabile errato `AZURE_OPENAI_API_KEY` → `AZURE_OPENAI_KEY` in `ai_service.py`; (3) deployment hardcoded `"gpt-4.1-mini"` sostituito con `settings.AZURE_OPENAI_CHAT_DEPLOYMENT`. Migliorata gestione errori con `HTTPException 503`.|
+
 
 
 ## 6. Conclusioni e Sviluppi Futuri

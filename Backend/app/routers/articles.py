@@ -6,6 +6,8 @@ from app.models.article import ManualMetadata, ArticleDocument
 from app.services.blob_service import uploaded_file_to_blob
 # IMPORTANTE: Importiamo la funzione corretta dal tuo cosmos_service
 from app.services.cosmos_service import save_article_metadata
+from app.services.ai_service import generate_ai_metadata
+from app.services.ingestion_service import extract_text_from_file
 
 router = APIRouter()
 
@@ -30,7 +32,10 @@ async def upload_file(
     file_bytes = await file.read()
     blob_url = await uploaded_file_to_blob(blob_filename, file_bytes)
 
-    # 3. Formatto i tag
+    # 3. Estraggo testo dal file (parser multiformat)
+    parser_file = extract_text_from_file(file_bytes, blob_filename)
+
+    # 4. Formatto i tag
     tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
 
     manual_meta = ManualMetadata(
@@ -41,12 +46,15 @@ async def upload_file(
         tags=tag_list
     )
 
+    # 5. Genero metadati AI tramite LangChain + Azure OpenAI (AWAIT obbligatorio: funzione async)
+    metadata_ia = await generate_ai_metadata(parser_file)
     # 4. Creo il JSON da caricare in cosmos
     article_doc = ArticleDocument(
         id=article_id,
         blob_url=blob_url,
+        uploaded_at=datetime.now(timezone.utc).isoformat(),
         manual_metadata=manual_meta,
-        uploaded_at=datetime.now(timezone.utc).isoformat()
+        IA_metadata = metadata_ia
     )
 
     # 5. Salvo su Cosmos usando la funzione corretta

@@ -245,7 +245,7 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 - [x] **Task 2.3**: Parser file multiformat
   - Obbligatori: TXT, MD, JSON
   - Facoltativi: DOCX (`python-docx`), PDF
-- [ ] **Task 2.4**: Generazione metadati AI (LangChain + Azure OpenAI)
+- [x] **Task 2.4**: Generazione metadati AI (LangChain + Azure OpenAI)
 - [ ] **Task 2.5**: Salvataggio metadati su Cosmos DB
 - [ ] **Task 2.6**: Chunking + embedding + indicizzazione su Azure AI Search
 

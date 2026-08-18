@@ -20,5 +20,5 @@ search_client = SearchClient(endpoint=settings.AZURE_SEARCH_ENDPOINT,
                              )
 openai_client = AzureOpenAI(azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
                             api_key=settings.AZURE_OPENAI_KEY,
-                            api_version= "2024-02-01")
+                            api_version= "2025-04-14")
 
