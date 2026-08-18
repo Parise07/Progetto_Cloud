@@ -27,6 +27,8 @@ htmlcov/
 .coverage
 *.log
 
+azurite_data/
+
 # IDE
 .vscode/
 .idea/

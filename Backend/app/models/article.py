@@ -31,7 +31,16 @@ class ArticleDocument(BaseModel):
     )
     IA_metadata: Optional[MetadataIA] = Field(
         None,
+        description="Metadati generati dall'IA"
     )
 
-
+class EmbeddingDocument(BaseModel):
+    chunk_id: str = Field(..., description="{article_id}-chunk-{index}")
+    article_id: str = Field(..., description="UUID univoco dell'articolo")
+    chumk_text: Optional[List[str]] = Field(
+        None,
+    )
+    embedding: Optional[List[List[float]]] = Field(
+        None,
+    )
 
