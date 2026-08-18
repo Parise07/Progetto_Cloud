@@ -247,7 +247,7 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
   - Facoltativi: DOCX (`python-docx`), PDF
 - [x] **Task 2.4**: Generazione metadati AI (LangChain + Azure OpenAI)
 - [x] **Task 2.5**: Salvataggio metadati su Cosmos DB
-- [ ] **Task 2.6**: Chunking + embedding + indicizzazione su Azure AI Search
+- [x] **Task 2.6**: Chunking + embedding + indicizzazione su Azure AI Search
 
 ### FASE 3 — Backend: RAG e Ricerca
 - [ ] **Task 3.1**: Endpoint `POST /search/query` (ricerca in linguaggio naturale)

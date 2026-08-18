@@ -165,8 +165,32 @@ Nella pipeline dell'endpoint `POST /articles/upload`, dopo l'estrazione del test
 
 In caso di errore durante l'invocazione del modello (es. timeout, quota esaurita, risposta malformata), la funzione `generate_ai_metadata` solleva una `HTTPException` con codice `503 Service Unavailable` e un messaggio esplicativo. Questa strategia di gestione degli errori è preferibile rispetto al rilancio di un'eccezione generica non gestita, in quanto garantisce che FastAPI restituisca sempre una risposta HTTP con codice e corpo controllati, migliorando la diagnosticabilità del sistema in produzione.
 
-### 4.6 Chunking ed Embedding
-*(Da completare in seguito)*
+### 4.6 Chunking, Embedding e Indicizzazione Vettoriale
+
+La pipeline di preparazione dei dati per la ricerca semantica si articola in tre fasi sequenziali, orchestrate nell'endpoint di upload dopo la persistenza dei metadati su Cosmos DB.
+
+#### Chunking del testo (`ai_service.chunking`)
+
+Il testo grezzo estratto dal parser viene suddiviso in frammenti (*chunk*) di dimensione controllata tramite il `RecursiveCharacterTextSplitter` di LangChain. I parametri adottati (`chunk_size=500`, `chunk_overlap=50`) garantiscono che ogni chunk sia abbastanza ridotto da essere rappresentato in modo semanticamente coerente da un singolo vettore embedding, e che la sovrapposizione di 50 caratteri tra chunk adiacenti preservi il contesto ai margini di ogni frammento, evitando interruzioni semantiche nette.
+
+#### Generazione degli Embedding (`ai_service.generate_embedding_for_chunks`)
+
+La lista di chunk testuali viene passata alla funzione asincrona `generate_embedding_for_chunks`, che invoca `AzureOpenAIEmbeddings.aembed_documents()` tramite LangChain. Il modello `text-embedding-ada-002` trasforma ogni frammento in un vettore denso a 1536 dimensioni, restituendo una lista parallela di vettori `list[list[float]]` nel medesimo ordine dei chunk in ingresso. Questa proprietà di parallelismo posizionale è fondamentale per la fase successiva.
+
+#### Accoppiamento e Indicizzazione su Azure AI Search (`search_service.index_chunk_to_ai_search`)
+
+La funzione `index_chunk_to_ai_search` riceve le due liste parallele — `chunks: list[str]` e `embedding: list[list[float]]` — e le percorre in modo sincrono tramite `zip(chunks, embedding)` dentro un ciclo `enumerate`. L'uso combinato di `zip` ed `enumerate` garantisce che ad ogni iterazione il testo e il suo vettore corrispondente vengano accoppiati in modo deterministico, e che venga generato un `chunk_id` univoco nella forma `{article_id}-chunk-{index}`. Per ogni coppia viene istanziato un oggetto Pydantic `EmbeddingDocument` e serializzato in dizionario tramite `.model_dump()`, producendo il formato JSON atteso dall'SDK `azure-search-documents`.
+
+L'intera lista di documenti viene caricata su Azure AI Search con una singola chiamata batch a `upload_documents`, minimizzando la latenza di rete. Il client utilizzato è quello **asincrono** (`azure.search.documents.aio.SearchClient`), necessario per la compatibilità con l'event loop di FastAPI: l'uso del client sincrono in un contesto `async def` bloccherebbe il thread del server. Il client viene istanziato e chiuso all'interno di un `async with`, garantendo il rilascio corretto delle risorse HTTP.
+
+In modalità `TEST_MODE=True`, la funzione ritorna immediatamente con un messaggio di log, senza effettuare alcuna chiamata al cloud, coerentemente con il pattern di mock adottato nelle funzioni `generate_ai_metadata` e `generate_embedding_for_chunks`.
+
+| Oggetto Pydantic | Campo | Ruolo in Azure AI Search |
+|---|---|---|
+| `EmbeddingDocument` | `chunk_id` | Chiave primaria del documento nell'indice |
+| `EmbeddingDocument` | `article_id` | Campo di filtro per recuperare tutti i chunk di un articolo |
+| `EmbeddingDocument` | `chunk_text` | Campo testo su cui opera la ricerca full-text (BM25) |
+| `EmbeddingDocument` | `embedding` | Campo vettore su cui opera la ricerca semantica (HNSW) |
 
 ### 4.7 Motore RAG e risposta finale
 *(Da completare in seguito)*
@@ -197,6 +221,7 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
  Refactoring modulo Bicep OpenAI — conformità region policy italynorth | Claude Sonnet 4.6 | "Adatta la configurazione Bicep per la risorsa Azure OpenAI a causa delle restrizioni della policy della sottoscrizione Azure for Students UniCal (italynorth obbligatorio, regioni esterne bloccate). Il modulo deve creare solo l'account base; i deployment dei modelli vengono gestiti manualmente via Azure AI Studio." | Refactoring di `openai.bicep`: rimossi i blocchi `embeddingDeployment` e `gptDeployment` (lasciati in commento per riferimento); aggiornati `main.bicep` (default `openAiLocation = 'italynorth'`), `parameters.json`, `README.md` (aggiunta sezione deployment manuale con tabella modelli), `implementation_plan.md` (Task 1.5 completato) e `Relazione_Progetto.md` (sezione Azure OpenAI + log). |
  Verifica formattazione e mappatura file .env | Claude Sonnet 4.6 | "Agente, ho completato il deploy Bicep ed eseguito i comandi Azure CLI. Genera o aggiorna il file backend/.env e backend/.env.example, mappando le variabili d'ambiente necessarie per il backend Python secondo la struttura esposta da Bicep (Storage, Cosmos, Search, OpenAI, ACR) e verificando il .gitignore." | Controllata e validata la sintassi delle variabili d'ambiente. Verificata la corrispondenza con i client del backend Python e generato il file .env.example privo di credenziali segrete per il commit su Git. |
  Code Review e Task 2.4 — Generazione metadati AI (LangChain + Azure OpenAI) | Claude Sonnet 4.6 | "Esegui code review architetturale e funzionale del Task 2.4. Verifica l'integrazione con AzureChatOpenAI e LangChain, l'uso di Pydantic per output JSON strutturato, la gestione degli errori e i conflitti con il runtime asincrono di FastAPI. Aggiorna implementation_plan.md e scrivi la sezione 4.5 della relazione." | Identificati e corretti 3 bug: (1) `await` mancante su `generate_ai_metadata()` in `articles.py` (coroutine mai eseguita); (2) nome variabile errato `AZURE_OPENAI_API_KEY` → `AZURE_OPENAI_KEY` in `ai_service.py`; (3) deployment hardcoded `"gpt-4.1-mini"` sostituito con `settings.AZURE_OPENAI_CHAT_DEPLOYMENT`. Migliorata gestione errori con `HTTPException 503`.|
+ Code Review Task 2.6 — Indicizzazione vettoriale su Azure AI Search (`search_service.py`) | Claude Sonnet 4.6 | "Esegui la code review della funzione `index_chunk_to_ai_search`. Verifica l'uso corretto di `zip()` ed `enumerate()`, la serializzazione Pydantic con `model_dump()`, la gestione asincrona del client Search e la presenza del blocco TEST_MODE. Aggiorna la sezione 4.6 della relazione." | **Codice scritto interamente dallo studente.** L'IA è stata utilizzata esclusivamente come strumento di code review e validazione. Identificati e corretti 4 bug: (1) import errato `azure.search.documents.SearchClient` (sincrono) → `azure.search.documents.aio.SearchClient` (asincrono); uso del client sincrono con `await` e `async with` genera `TypeError` a runtime bloccando l'event loop di FastAPI; (2) chiave di configurazione inesistente `settings.AZURE_SEARCH_KEY` → `settings.AZURE_SEARCH_ADMIN_KEY` (nome corretto in `config.py`); (3) assenza del blocco `TEST_MODE` presente invece in tutti gli altri servizi; (4) rientro del codice errato (indentazione a doppio livello della funzione). |
 
 
 

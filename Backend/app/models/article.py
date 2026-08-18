@@ -37,10 +37,6 @@ class ArticleDocument(BaseModel):
 class EmbeddingDocument(BaseModel):
     chunk_id: str = Field(..., description="{article_id}-chunk-{index}")
     article_id: str = Field(..., description="UUID univoco dell'articolo")
-    chumk_text: Optional[List[str]] = Field(
-        None,
-    )
-    embedding: Optional[List[List[float]]] = Field(
-        None,
-    )
+    chunk_text: Optional[str] = Field(None)
+    embedding: Optional[List[float]] = Field(None)
 
