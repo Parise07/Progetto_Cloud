@@ -81,3 +81,4 @@ async def generate_embedding_for_chunks(chunks: list[str])-> list[list[float]]:
             status_code=503,
             detail=f"Errore durante la generazione degli embeddings (Azure OpenAI): {str(e)}"
         )
+

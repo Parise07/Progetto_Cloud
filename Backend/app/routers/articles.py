@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from app.models.article import ManualMetadata, ArticleDocument
 from app.services.blob_service import uploaded_file_to_blob
 # IMPORTANTE: Importiamo la funzione corretta dal tuo cosmos_service
-from app.services.cosmos_service import save_article_metadata
-from app.services.ai_service import generate_ai_metadata
+from app.services.cosmos_service import save_article_metadata, save_chunks_metadata
+from app.services.ai_service import generate_ai_metadata, chunking, generate_embedding_for_chunks
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
+from app.services.search_service import index_chunk_to_ai_search
 
 router = APIRouter()
 
@@ -64,6 +65,14 @@ async def upload_file(
    # 5. Salvo su Cosmos
 
     save_article_metadata(article_doc.model_dump(mode='json'))
+    # 6. effettuo il chunking
+    chunks= chunking(parser_file)
+    save_chunks_metadata(article_id=article_id, chunks=chunks)
+    #7 embedding
+    embeddings =generate_embedding_for_chunks(chunks)
+
+    # 8 AI Search
+    await index_chunk_to_ai_search(article_id=article_id , chunks=chunks, embedding=embeddings)
 
     return {
         "status": "success",

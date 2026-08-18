@@ -240,7 +240,7 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 - [ x ] **Task 1.5 — Refactoring modulo OpenAI per conformità policy Azure for Students (italynorth)**: La policy della sottoscrizione Azure for Students (Università della Calabria) impone l'uso esclusivo della regione `italynorth` e blocca qualsiasi deploy verso regioni esterne. Poiché `italynorth` non supporta il provisioning automatico dei model-deployment OpenAI tramite ARM/Bicep con SKU Standard, il modulo `openai.bicep` è stato refactorizzato per creare **soltanto l'account base** (`Microsoft.CognitiveServices/accounts`). I deployment dei modelli (`text-embedding-ada-002` e `gpt-4o-mini`) vengono distribuiti **manualmente** tramite Azure AI Studio / Portale Azure al termine del deploy IaC. Questa scelta garantisce conformità con le policy di sicurezza della sottoscrizione accademica pur mantenendo la riproducibilità dell'infrastruttura base via IaC.
 
 ### FASE 2 — Backend: Core Pipeline di Ingestion
-- [ x ] **Task 2.1**: Setup FastAPI + struttura cartelle backend
+- [x] **Task 2.1**: Setup FastAPI + struttura cartelle backend
 - [x] **Task 2.2**: Endpoint `POST /articles/upload` + salvataggio su Blob Storage
 - [x] **Task 2.3**: Parser file multiformat
   - Obbligatori: TXT, MD, JSON
