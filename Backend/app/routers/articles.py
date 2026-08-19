@@ -9,7 +9,7 @@ from app.services.cosmos_service import save_article_metadata, save_chunks_metad
 from app.services.ai_service import generate_ai_metadata, chunking, generate_embedding_for_chunks
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
-from app.services.search_service import index_chunk_to_ai_search
+from app.services.search_service import index_chunk_to_ai_search,check_similarity
 
 router = APIRouter()
 
@@ -23,8 +23,7 @@ async def upload_file(
         tags: str = Form(None) ):
 
 
-    if check_title_exists(title):
-        raise HTTPException(status_code=400, detail="titolo già esistente inserirne uno diverso ")
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="nessun file fornito")
 
@@ -33,14 +32,27 @@ async def upload_file(
     extension = file.filename.split(".")[-1].lower() if "." in file.filename else "txt"
     blob_filename = f"{article_id}.{extension}"
 
-    # 2. Carico file su blob
-    file_bytes = await file.read()
-    blob_url = await uploaded_file_to_blob(blob_filename, file_bytes)
+    if check_title_exists(title):
+        raise HTTPException(status_code=400, detail="titolo già esistente inserirne uno diverso ")
 
-    # 3. Estraggo testo dal file (parser multiformat)
+    # 2. Leggo il file e parser
+    file_bytes = await file.read()
     parser_file = extract_text_from_file(file_bytes, blob_filename)
 
-    # 4. Formatto i tag
+    #3 genero un vettore civeta
+    vector= parser_file[:500]
+    vector_embedding = await generate_embedding_for_chunks([vector])
+    extract_vector= vector_embedding[0]
+
+    # 3 bis controllo similarità
+    if await check_similarity(extract_vector):
+        raise HTTPException(status_code=400, detail=" Documento molto simile a uno già esistente")
+
+
+    # 4. carico file su blob
+    blob_url = await uploaded_file_to_blob(blob_filename, file_bytes)
+
+    # 5. Formatto i tag
     tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
 
     manual_meta = ManualMetadata(
@@ -52,7 +64,7 @@ async def upload_file(
     )
 
     metadata_ia = await generate_ai_metadata(parser_file)
-    # 4. Creo il JSON da caricare in cosmos
+    # 6. Creo il JSON da caricare in cosmos
     article_doc = ArticleDocument(
         id = article_id,
         blob_url=blob_url,
@@ -62,16 +74,15 @@ async def upload_file(
     )
 
 
-   # 5. Salvo su Cosmos
-
+   # 7. Salvo su Cosmos e chunking
+    chunks = chunking(parser_file)
     save_article_metadata(article_doc.model_dump(mode='json'))
-    # 6. effettuo il chunking
-    chunks= chunking(parser_file)
+
     save_chunks_metadata(article_id=article_id, chunks=chunks)
-    #7 embedding
+    #8 embedding
     embeddings =generate_embedding_for_chunks(chunks)
 
-    # 8 AI Search
+    # 9 AI Search
     await index_chunk_to_ai_search(article_id=article_id , chunks=chunks, embedding=embeddings)
 
     return {

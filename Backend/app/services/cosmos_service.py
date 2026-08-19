@@ -7,12 +7,11 @@ articles_container = database.get_container_client(settings.COSMOS_ARTICLES_CONT
 chunks_container = database.get_container_client(settings.COSMOS_CHUNKS_CONTAINER)
 
 def save_chunks_metadata(article_id: str, chunks: list[str]):
-
     try:
         # Usiamo enumerate per avere sia l'indice (0, 1, 2...) che il testo del chunk
         for index, text in enumerate(chunks):
             chunk_document = {
-                "id": f"{article_id}-chunk-{index}",  # ID univoco del chunk
+                "chunk_id": f"{article_id}-chunk-{index}",  # ID univoco del chunk
                 "article_id": article_id,  # Riferimento all'articolo padre
                 "chunk_index": index,  # Posizione del frammento
                 "text": text  # Il testo effettivo
@@ -52,3 +51,4 @@ def check_title_exists(title: str) -> bool:
         # Gestisci eventuali errori di connessione
         print(f"Errore durante la query su Cosmos DB: {e}")
         raise
+

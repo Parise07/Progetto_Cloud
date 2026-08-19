@@ -59,6 +59,8 @@ async def generate_ai_metadata(text_content: str) -> MetadataIA:
             detail=f"Errore durante la generazione dei metadati AI (Azure OpenAI): {str(e)}"
         )
 
+#TODO verificare chuncking
+
 def chunking(text_content: str) -> list[str]:
     text_splitter= RecursiveCharacterTextSplitter(
         chunk_size=500,
@@ -82,3 +84,46 @@ async def generate_embedding_for_chunks(chunks: list[str])-> list[list[float]]:
             detail=f"Errore durante la generazione degli embeddings (Azure OpenAI): {str(e)}"
         )
 
+async def generate_rag_aswer(relevant_chunks : list[dict], question: str) -> str:
+        '''Prende la domanda dell'utente e i chunk recuperati  e costruisce un prompt
+        per poter chiedere a Azure Openai di generare una risposta '''
+        if settings.TEST_MODE:
+            print("🛠️ MOCK MODE: Generazione risposta Rag")
+            return "Questa è una risposta generata in automatico e di prova"
+
+        context_text=[]
+        for chunk in relevant_chunks:
+            testo = chunk.get("testo","")
+            art_id = chunk.get("art_id","Sconosciuto")
+            context_text.append(f"--- Documento ID: {art_id} ---\n{testo}")
+        full_text = "\n\n".join(context_text)
+
+        rag_prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "Sei un assistente virtuale per un archivio di notizie giornalistiche. "
+                    "Il tuo compito è rispondere alle domande degli utenti basandoti ESCLUSIVAMENTE sulle informazioni "
+                    "fornite nel CONTESTO qui sotto. Non inventare informazioni, non usare conoscenze esterne. "
+                    "Se la risposta non è presente nel contesto, rispondi: 'Mi dispiace, non ho trovato informazioni sufficienti nei documenti in archivio.'\n\n"
+                    "CONTESTO:\n{context}"
+                ),
+                (
+                    "human",
+                    "Domanda dell'utente: {question}"
+                )
+            ])
+
+        rag_chain = rag_prompt | llm
+        try:
+            response= await rag_chain.ainvoke({
+             "context" : full_text,
+             "question": question
+            })
+            return response.content
+        except Exception as e:
+            print("Errore durante la generazione della risposta RAG ")
+            raise HTTPException(
+                status_code=503,
+                detail= f"Errore di comunicazione con Azure OpenAI: {str(e)}"
+            )
