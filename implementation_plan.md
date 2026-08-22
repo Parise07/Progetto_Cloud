@@ -250,7 +250,7 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 - [x] **Task 2.6**: Chunking + embedding + indicizzazione su Azure AI Search
 
 ### FASE 3 — Backend: RAG e Ricerca
-- [ ] **Task 3.1**: Endpoint `POST /search/query` (ricerca in linguaggio naturale)
+- [x] **Task 3.1**: Endpoint `POST /search/query` (ricerca in linguaggio naturale)
 - [ ] **Task 3.2**: Endpoint `GET /articles` (lista articoli con filtri)
 - [ ] **Task 3.3**: Endpoint `GET /articles/{id}` (dettaglio articolo + chunk)
 
@@ -261,11 +261,7 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 - [ ] **Task 4.4**: Schermata Lista Articoli (con filtri)
 - [ ] **Task 4.5**: Schermata Dettaglio Articolo (metadati + chunk)
 
-### FASE 5 — Docker e Deploy
-- [ ] **Task 5.1**: Dockerfile per il backend
-- [ ] **Task 5.2**: Push immagine su Azure Container Registry
-- [ ] **Task 5.3**: Deploy su Azure Container Apps
-- [ ] **Task 5.4**: Build Flutter Web + deploy su Azure Static Web Apps
+
 
 ### FASE 6 — Feature Originali (da discutere)
 - [ ] **Task 6.1**: Timeline cronologica degli articoli (visualizzazione avanzata)

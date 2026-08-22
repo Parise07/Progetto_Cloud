@@ -52,3 +52,25 @@ def check_title_exists(title: str) -> bool:
         print(f"Errore durante la query su Cosmos DB: {e}")
         raise
 
+def search_by_keywords(keywords: str) -> list[dict]:
+    '''Ricerca normale attraverso keywords '''
+    query = """
+            SELECT c.id, c.manual.title, c.manual.author, c.manual.description , c.blob_url
+            FROM c 
+            WHERE CONTAINS(c.manual.title, @keywords , true)
+            OR CONTAINS(c.manual.description, @keywords , true)"""
+
+    parameters = [
+        {"name": "@keywords", "value": keywords}
+    ]
+
+    try:
+        results = articles_container.query_items(
+            query=query,
+            parameters=parameters,
+            enable_cross_partition_query=True
+        )
+        return list(results)
+    except CosmosHttpResponseError as e:
+        print(f"Errore durante la query su Cosmos DB: {e}")
+        return []

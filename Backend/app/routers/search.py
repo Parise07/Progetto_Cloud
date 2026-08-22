@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException,status
-
+from app.services.cosmos_service import search_by_keywords
 from app.models.chunk import RagSearchQuery, GenericSearchQuery
 from app.services.ai_service import generate_embedding_for_chunks, generate_rag_aswer
 from app.services.search_service import search_relevant_chunks
@@ -34,4 +34,17 @@ async def search_rag_articles(query: RagSearchQuery):
 
 @router.post("/generic")
 async def search_generic_articles(query: GenericSearchQuery):
-    pass
+    if not query.keyword or not query.keyword.strip() == "":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    results = search_by_keywords(query.keyword)
+    if not results:
+        return {
+            "keywords": query.keyword,
+            "message" : "Nessuna corrispondenza trovata",
+            "results": []
+        }
+    return {
+        "keywords": query.keyword,
+        "message": f"Trovate {len(results)} corrispondenze ",
+        "results": results
+    }
