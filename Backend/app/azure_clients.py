@@ -2,7 +2,8 @@ from azure.core.credentials import AzureKeyCredential
 from azure.cosmos import CosmosClient
 from azure.search.documents.aio import SearchClient
 from openai import AzureOpenAI
-
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from app.config import settings
 # Utilizziamo il client ASINCRONO di Azure Blob Storage (azure.storage.blob.aio)
 # per garantire la compatibilità con FastAPI (async/await) ed evitare il mix

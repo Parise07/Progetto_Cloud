@@ -4,6 +4,7 @@ class Settings(BaseSettings):
     #Azure Storage
     AZURE_STORAGE_CONNECTION_STRING: str
     AZURE_STORAGE_CONTAINER_NAME: str = "articles-raw"
+    AZURE_STORAGE_IMAGE_CONTAINER : str = "articles-image"
 
     #Azure Cosmos DB
     COSMOS_ENDPOINT: str
@@ -25,6 +26,11 @@ class Settings(BaseSettings):
     AZURE_OPENAI_CHAT_DEPLOYMENT: str = "gpt-4o-mini"
     AZURE_OPENAI_EMBEDDING_DEPLOYMENT: str = "text-embedding-ada-002"
     AZURE_OPENAI_API_VERSION: str = "2024-02-01"
+
+    #keycloack
+    KEYCLOAK_SERVER_URL: str
+    KEYCLOAK_REALM: str
+    KEYCLOAK_CLIENT_ID: str
 
     TEST_MODE: bool = False
 

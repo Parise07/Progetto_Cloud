@@ -51,6 +51,13 @@ resource articlesContainer 'Microsoft.Storage/storageAccounts/blobServices/conta
     publicAccess: 'None' // Container privato — accesso solo tramite backend
   }
 }
+resource articlesImageContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: blobService
+  name: 'articles-image'
+  properties: {
+    publicAccess: 'None' // Container privato — accesso solo tramite backend
+  }
+}
 
 // OUTPUT
 

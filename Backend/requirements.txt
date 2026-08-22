@@ -16,3 +16,4 @@ langchain
 langchain-openai
 tiktoken
 langchain_text_splitters
+python-jose[cryptography]

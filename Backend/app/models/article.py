@@ -23,9 +23,10 @@ class MetadataIA(BaseModel):
 
 class ArticleDocument(BaseModel):
     id: str = Field(..., description="UUID univoco dell'articolo (partition key)")
+    cover_url: Optional[str] = Field(None, description="URL immagine dell'articolo")
     blob_url: str = Field(..., description="URL del file grezzo su Azure Blob Storage")
     uploaded_at: datetime = Field(..., description="Timestamp ISO 8601 del caricamento")
-    manual_metadata: Optional[ManualMetadata] = Field(
+    manual: Optional[ManualMetadata] = Field(
         None,
         description="Metadati inseriti manualmente dall'utente"
     )

@@ -34,7 +34,7 @@ async def search_rag_articles(query: RagSearchQuery):
 
 @router.post("/generic")
 async def search_generic_articles(query: GenericSearchQuery):
-    if not query.keyword or not query.keyword.strip() == "":
+    if not query.keyword or  query.keyword.strip() == "":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     results = search_by_keywords(query.keyword)
     if not results:
