@@ -260,6 +260,60 @@ La verifica dei token si basa sullo standard **OpenID Connect (OIDC)** con algor
 
 L'infrastruttura Keycloak è orchestrata localmente tramite il file `docker-compose.yml` nel modulo `autentication/`, che avvia un'istanza containerizzata del server per lo sviluppo e il test.
 
+### 4.10 Frontend Flutter — Home Page (`main.dart`)
+
+L'implementazione della schermata principale del frontend Flutter costituisce il punto di ingresso dell'applicazione lato utente. Il file `main.dart` è strutturato come un unico `StatefulWidget` (`MyHomePage`) che incapsula l'intero layout della Home Page, predisposto per il collegamento con le API REST del backend.
+
+#### Sistema di Colori Globale
+
+Il design dell'applicazione è governato da due costanti cromatiche dichiarate a livello globale:
+
+| Costante | Valore | Semantica |
+|----------|--------|-----------|
+| `colorePrincipale` | `#1B1B1B` | Colore dominante — utilizzato per AppBar, Drawer header, testi, ombre e accenti primari |
+| `coloreSecondario` | `#9B111E` | Colore di accento — utilizzato per il contenitore strumenti dell'AppBar, badge categoria, indicatori di caricamento e placeholder |
+
+Il `ThemeData` globale (`MaterialApp`) configura `ColorScheme`, `AppBarTheme` e `scaffoldBackgroundColor` a partire da queste due costanti, garantendo coerenza cromatica su tutti i widget senza ricorrere a `Theme.of(context)` nei singoli componenti.
+
+#### Layout dell'AppBar
+
+L'`AppBar` è configurata con `elevation: 6` e `shadowColor: Colors.black54` per creare un distacco visivo netto rispetto al body sottostante. L'organizzazione orizzontale della barra prevede:
+
+| Posizione | Widget | Funzionalità |
+|-----------|--------|--------------|
+| Sinistra | `Text` (titolo) | Identità dell'applicazione ("NewsArchive"), font bold 22px, colore bianco |
+| Centro | `Container` con sfondo `coloreSecondario` e `BorderRadius.circular(28)` | Contenitore unico "pill-shaped" che raggruppa i tre strumenti operativi, separati internamente da divisori verticali sottili |
+| Centro — elemento 1 | `DropdownButton<String>` | Filtro per categoria tematica (Tutte, Politica, Economia, Tecnologia, Sport, Cultura, Scienza) con refresh automatico della griglia al cambio selezione |
+| Centro — elemento 2 | `TextField` (Expanded) | Barra di ricerca testuale con bordi arrotondati, sfondo semi-trasparente, icona clear dinamica e `onSubmitted` predisposto per invocare gli endpoint di ricerca |
+| Centro — elemento 3 | `Switch` + label testuale | Toggle per alternare modalità di ricerca RAG (`POST /search/rag`) e Normale (`POST /search/generic`); la label testuale ("RAG"/"Normal") è posizionata a destra dello switch |
+| Estrema destra | `IconButton` (hamburger menu) | Apre il `endDrawer` laterale |
+
+#### Drawer di Navigazione (endDrawer)
+
+Il `Drawer`, posizionato a destra (`endDrawer`) e attivato dall'icona hamburger nell'AppBar, presenta un `DrawerHeader` con sfondo `colorePrincipale`, icona giornale in `coloreSecondario` e titolo in bianco. Le azioni di navigazione esposte tramite `ListTile` (con icone in `colorePrincipale`) sono:
+
+- **Log-in**: Predisposto per la navigazione verso il flusso di autenticazione Keycloak (OAuth2.0/OIDC).
+- **Cronologia articoli**: Accesso alla lista degli articoli visualizzati di recente.
+- **Upload articolo**: Navigazione verso la schermata di caricamento (`upload_screen.dart`).
+- **Informazioni**: Dialog `showAboutDialog` con dettagli sul sistema e versione.
+
+#### Architettura Infinite Scroll
+
+Il corpo della pagina implementa un pattern di **Infinite Scroll** tramite `GridView.builder` con `ScrollController`. Il meccanismo opera come segue:
+
+1. Un `ScrollController` monitora la posizione di scroll dell'utente.
+2. Quando la posizione raggiunge una soglia di 200 pixel dal fondo della lista, viene triggerato il caricamento della pagina successiva.
+3. La funzione `_loadArticles()` invoca (in produzione) `GET /articles?skip=N&limit=10&category=...`, accumulando i risultati nella lista locale `_articles`.
+4. Un `CircularProgressIndicator` (colori `coloreSecondario`/`colorePrincipale`) viene visualizzato come ultimo elemento della griglia durante il caricamento.
+5. Il `RefreshIndicator` (pull-to-refresh) consente il reset completo della lista.
+
+#### Design della Card
+
+Ogni articolo è rappresentato da una `Card` con sfondo bianco, `elevation: 3`, ombra navy e `ClipBehavior.antiAlias`. Il layout verticale comprende:
+
+- **Parte superiore** (flex: 3): Immagine di copertina (`cover_url`) caricata via `Image.network` con `BoxFit.cover`. In assenza di immagine, un placeholder mostra un'icona contestuale alla categoria (es. bilancia per Politica, pallone per Sport) in `coloreSecondario`.
+- **Parte inferiore** (flex: 2): Badge di categoria con sfondo `coloreSecondario` trasparente, titolo dell'articolo in `colorePrincipale` (massimo 2 righe, `TextOverflow.ellipsis`) e nome dell'autore con icona persona.
+
 ## 5. Trasparenza IA e Metodologia di Sviluppo
 
 Il progetto è stato condotto secondo una metodologia "Review-driven development", prevedendo un'interazione iterativa con agenti basati su intelligenza artificiale generativa per la definizione architetturale e la generazione del codice sorgente.
@@ -289,6 +343,7 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
  Code Review Task 2.6 — Indicizzazione vettoriale su Azure AI Search (`search_service.py`) | Claude Sonnet 4.6 | "Esegui la code review della funzione `index_chunk_to_ai_search`. Verifica l'uso corretto di `zip()` ed `enumerate()`, la serializzazione Pydantic con `model_dump()`, la gestione asincrona del client Search e la presenza del blocco TEST_MODE. Aggiorna la sezione 4.6 della relazione." | **Codice scritto interamente dallo studente.** L'IA è stata utilizzata esclusivamente come strumento di code review e validazione. Identificati e corretti 4 bug: (1) import errato `azure.search.documents.SearchClient` (sincrono) → `azure.search.documents.aio.SearchClient` (asincrono); uso del client sincrono con `await` e `async with` genera `TypeError` a runtime bloccando l'event loop di FastAPI; (2) chiave di configurazione inesistente `settings.AZURE_SEARCH_KEY` → `settings.AZURE_SEARCH_ADMIN_KEY` (nome corretto in `config.py`); (3) assenza del blocco `TEST_MODE` presente invece in tutti gli altri servizi; (4) rientro del codice errato (indentazione a doppio livello della funzione). |
 | Scelta del protocollo di sicurezza | Gemini 1.5 Pro | "Ragiona come un Software Engineer professionista e valuta quale approccio per gestire l'autenticazione di un utente si adegua al mio progetto tra JWT e MSAL." | Analisi comparativa tra MSAL (Azure Entra ID B2C) e JWT custom. Stesura del documento di decisione architetturale (ADR) con scelta motivata verso JWT tramite FastAPI e Cosmos DB per dimostrare competenze backend, mantenere coesione dei dati ed evitare over-engineering infrastrutturale. |
 | Implementazione Keycloak e Autenticazione | Gemini 1.5 Pro | "Ragiona come un web Security expert professionista e implementa i servizi di keycloack inoltre effettua una core rewie sull'aggiunta dell'upload dei file con immagini" | Code review funzionale per l'integrazione dell'upload delle copertine (`cover_url`) su Blob Storage e fix dei deadlock asincroni. Check architetturale di Keycloak come Identity Provider su infrastruttura Azure, abbandonando l'approccio Custom JWT per rispettare la best practice "Don't roll your own crypto" aggirando i limiti della sottoscrizione studentesca e implementazione delle funzioni get_current_user e get_keycloak_public_key nel file keycloak_service.py . |
+| Generazione e Refinement UI Home Page Flutter (Task 4.1) | Claude Opus 4.6 | \"Agisci come Senior Flutter Developer. Implementa la UI della Home Page in `main.dart` seguendo il wireframe: AppBar con titolo, dropdown filtri, barra di ricerca e switch RAG/Normal; Drawer laterale destro con Login, Cronologia, Upload e Info; body con Infinite Scroll su GridView.builder di Card (cover_url, titolo, autore). Definisci `colorePrincipale` e `coloreSecondario` globali, raggruppa i controlli dell'AppBar in un Container unico con sfondo secondario e bordi arrotondati, applica elevation all'AppBar.\" | Implementazione iterativa del file `main.dart`: (1) generazione iniziale della struttura completa (AppBar, endDrawer, GridView.builder con Infinite Scroll e Card); (2) refactoring AppBar: controlli centrati, barra di ricerca allargata; (3) introduzione sistema colori globale (`colorePrincipale = #1B1B1B`, `coloreSecondario = #9B111E`) con `ThemeData` configurato, `AppBar` con `elevation: 6`, controlli raggruppati in `Container` pill-shaped con sfondo `coloreSecondario` e separatori verticali, label switch posizionata a destra; (4) estensione coerenza cromatica a tutto il body (Card, Drawer, loading indicators, empty state, placeholder). Dati mock predisposti per sostituzione con chiamate HTTP a `GET /articles` e `POST /search/rag`. |
 
 
 
