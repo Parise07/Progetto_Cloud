@@ -1,45 +1,58 @@
 # =============================================================================
-# Progetto_Cloud — Root .gitignore
-# Regole comuni a TUTTO il repository (monorepo Backend + frontend).
-# Le regole specifiche per tecnologia stanno in:
-#   - Backend/.gitignore   (Python / PyCharm / Azurite)
-#   - frontend/.gitignore  (Flutter / Dart / IntelliJ)
+# Backend/.gitignore
+# Regole specifiche per il sotto-progetto Python / FastAPI.
+# Compatibile con PyCharm e VS Code.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# Segreti e configurazione locale
+# Python — bytecode e cache
 # ---------------------------------------------------------------------------
-.env
-*.env.local
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
 
 # ---------------------------------------------------------------------------
-# OS
+# Packaging / distribuzione
 # ---------------------------------------------------------------------------
-.DS_Store
-Thumbs.db
-desktop.ini
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
 
 # ---------------------------------------------------------------------------
-# IDE generici (copertura root; ciascun sotto-progetto ha le proprie regole)
-# ---------------------------------------------------------------------------
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# ---------------------------------------------------------------------------
-# Docker artifacts
-# ---------------------------------------------------------------------------
-*.tar
-
-# ---------------------------------------------------------------------------
-# Log generici
-# ---------------------------------------------------------------------------
-*.log
-
-# ---------------------------------------------------------------------------
-# Ambiente virtuale Python
+# Ambienti virtuali
 # ---------------------------------------------------------------------------
 venv/
 .venv/
 env/
+
+# ---------------------------------------------------------------------------
+# Tool di analisi statica, test e copertura
+# ---------------------------------------------------------------------------
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# ---------------------------------------------------------------------------
+# PyCharm / IntelliJ — file di progetto locali
+# (la cartella .idea/ è già esclusa dalla root, qui aggiungiamo i file .iml)
+# ---------------------------------------------------------------------------
+*.iml
+*.ipr
+*.iws
+
+# ---------------------------------------------------------------------------
+# Azurite — emulatore locale Azure Storage
+# ---------------------------------------------------------------------------
+azurite_data/
+
+# ---------------------------------------------------------------------------
+# Segreti locali Backend (ridondante rispetto alla root, ma esplicito)
+# ---------------------------------------------------------------------------
+.env

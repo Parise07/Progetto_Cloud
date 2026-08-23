@@ -1,0 +1,61 @@
+# =============================================================================
+# frontend/.gitignore
+# Regole specifiche per il sotto-progetto Flutter / Dart.
+# Compatibile con IntelliJ IDEA, Android Studio e VS Code.
+# NOTA: i path qui sono RELATIVI a frontend/ — non alla root del repository.
+#
+# Le cartelle platform (android/, ios/, linux/, macos/, windows/) hanno
+# ciascuna il proprio .gitignore generato da Flutter: non duplichiamo qui
+# le loro regole.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Dart / Flutter — tooling e cache
+# ---------------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+
+# ---------------------------------------------------------------------------
+# Build output Flutter (top-level)
+# ---------------------------------------------------------------------------
+build/
+**/doc/api/
+
+# ---------------------------------------------------------------------------
+# Metadata Flutter (generato automaticamente dal tool)
+# ---------------------------------------------------------------------------
+.metadata
+
+# ---------------------------------------------------------------------------
+# IntelliJ / Android Studio — file di progetto locali
+# (la cartella .idea/ è già esclusa dalla root; qui aggiungiamo i file .iml)
+# ---------------------------------------------------------------------------
+*.iml
+*.ipr
+*.iws
+
+# ---------------------------------------------------------------------------
+# Obfuscation e Symbolication
+# ---------------------------------------------------------------------------
+app.*.symbols
+app.*.map.json
+
+# Android
+android/.gradle/
+android/local.properties
+android/**/GeneratedPluginRegistrant.java
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Runner/GeneratedPluginRegistrant.*
+
+# Altre piattaforme (se generate)
+linux/flutter/generated_plugin_registrant.*
+macos/Flutter/GeneratedPluginRegistrant.swift
+windows/flutter/generated_plugin_registrant.*
