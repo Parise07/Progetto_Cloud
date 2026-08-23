@@ -76,13 +76,20 @@ backend/
 │   ├── config.py             # Settings Pydantic (lettura da .env)
 │   ├── azure_clients.py      # Singleton client SDK Azure (Blob, Cosmos, Search, OpenAI)
 │   ├── models/
-│   │   └── article.py        # Modelli Pydantic: ManualMetadata, ArticleDocument
+│   │   ├── article.py        # Modelli Pydantic: ManualMetadata, ArticleDocument, EmbeddingDocument
+│   │   └── chunk.py          # Modelli Pydantic: RagSearchQuery, GenericSearchQuery
 │   ├── routers/
-│   │   └── articles.py       # Endpoint POST /articles/upload
+│   │   ├── articles.py       # Endpoint CRUD articoli (upload, lista, dettaglio)
+│   │   └── search.py         # Endpoint ricerca RAG e keyword
 │   └── services/
 │       ├── blob_service.py        # Upload su Azure Blob Storage (client asincrono)
-│       ├── cosmos_service.py      # Salvataggio metadati su Cosmos DB
+│       ├── cosmos_service.py      # CRUD metadati su Cosmos DB (articoli e chunk)
+│       ├── search_service.py      # Indicizzazione e ricerca vettoriale su Azure AI Search
+│       ├── ai_service.py          # Generazione metadati AI, embedding, risposta RAG (LangChain)
 │       └── ingestion_service.py   # Parser multiformat (TXT/MD/JSON/DOCX/PDF)
+├── autentication/
+│   ├── keycloack_service.py  # Verifica JWT tramite Keycloak (OIDC/RS256)
+│   └── docker-compose.yml    # Stack Keycloak locale per sviluppo
 ├── requirements.txt
 └── .env / .env.example
 ```
@@ -120,13 +127,17 @@ L'endpoint `POST /articles/upload`, implementato in `app/routers/articles.py`, o
 
 1. **Validazione dell'input**: Verifica che il file sia presente e che il filename non sia vuoto; in caso contrario restituisce `HTTP 400`.
 2. **Generazione ID univoco**: Creazione di un UUID v4 tramite il modulo standard `uuid`, utilizzato sia come identificatore del documento su Cosmos DB sia come nome del blob (`{article_id}.{ext}`).
-3. **Upload su Azure Blob Storage**: Il contenuto binario del file viene caricato nel container `articles-raw` tramite `blob_service.uploaded_file_to_blob()`. L'operazione è `await`-ata, sfruttando il client asincrono.
-4. **Estrazione testo**: Il contenuto binario viene passato a `ingestion_service.extract_text_from_file()` per ottenere la stringa di testo grezzo su cui operano le pipeline AI successive.
-5. **Costruzione dei metadati manuali**: I campi del form (`title`, `author`, `category`, `description`, `tags`) vengono istanziati in un oggetto `ManualMetadata`. I tag, ricevuti come stringa CSV, vengono normalizzati in lista Python.
-6. **Generazione metadati AI**: Il testo estratto viene passato ad `ai_service.generate_ai_metadata()` (chiamata `await`-ata) che invoca la chain LangChain e restituisce un oggetto `MetadataIA` popolato.
-7. **Creazione del documento**: Viene costruito un oggetto `ArticleDocument` aggregando `id`, `blob_url`, timestamp UTC, `manual_metadata` e `IA_metadata`.
-8. **Persistenza su Cosmos DB**: Il documento viene serializzato in JSON tramite `.model_dump(mode='json')` e salvato su Cosmos DB tramite `cosmos_service.save_article_metadata()`.
-9. **Risposta**: L'endpoint restituisce `HTTP 201 Created` con un payload JSON contenente `status`, `message`, `filename` e `blob_url`.
+3. **Controllo duplicazione titolo**: Prima di procedere, viene invocata `check_title_exists(title)` che esegue una query su Cosmos DB per verificare se esiste già un documento con lo stesso titolo. In caso affermativo, l'endpoint restituisce `HTTP 400` con un messaggio esplicativo, impedendo la duplicazione di articoli nella raccolta.
+4. **Controllo similarità semantica (deduplicazione vettoriale)**: I primi 500 caratteri del testo estratto vengono convertiti in embedding tramite `generate_embedding_for_chunks()`. Il vettore ottenuto viene passato a `check_similarity()`, che interroga Azure AI Search in modalità vettoriale con `k=1` e verifica se il punteggio del documento più vicino supera la soglia di 0.90. Se supera la soglia, l'upload viene bloccato con `HTTP 400` per prevenire l'inserimento di contenuti semanticamente quasi identici.
+5. **Upload su Azure Blob Storage**: Il contenuto binario del file viene caricato nel container `articles-raw` tramite `blob_service.uploaded_file_to_blob()`. L'operazione è `await`-ata, sfruttando il client asincrono. Se il form include un'immagine di copertina (`cover_image`), viene caricata separatamente tramite `upload_cover()`, restituendo un `cover_url` associato all'articolo.
+6. **Estrazione testo**: Il contenuto binario viene passato a `ingestion_service.extract_text_from_file()` per ottenere la stringa di testo grezzo su cui operano le pipeline AI successive.
+7. **Costruzione dei metadati manuali**: I campi del form (`title`, `author`, `category`, `description`, `tags`) vengono istanziati in un oggetto `ManualMetadata`. I tag, ricevuti come stringa CSV, vengono normalizzati in lista Python.
+8. **Generazione metadati AI**: Il testo estratto viene passato ad `ai_service.generate_ai_metadata()` (chiamata `await`-ata) che invoca la chain LangChain e restituisce un oggetto `MetadataIA` popolato.
+9. **Creazione del documento**: Viene costruito un oggetto `ArticleDocument` aggregando `id`, `blob_url`, `cover_url`, timestamp UTC, `manual` e `IA_metadata`.
+10. **Persistenza su Cosmos DB**: Il documento viene serializzato in JSON tramite `.model_dump(mode='json')` e salvato su Cosmos DB tramite `cosmos_service.save_article_metadata()`.
+11. **Chunking e persistenza chunk**: Il testo viene suddiviso tramite `chunking()` e i chunk salvati su Cosmos DB (container `chunks`) tramite `save_chunks_metadata()`.
+12. **Embedding e indicizzazione**: Gli embedding dei chunk vengono generati (con `await`) e caricati su Azure AI Search tramite `index_chunk_to_ai_search()`.
+13. **Risposta**: L'endpoint restituisce `HTTP 201 Created` con un payload JSON contenente `status`, `message`, `filename`, `blob_url` e `cover_url`.
 
 ### 4.5 Generazione Metadati via LLM (LangChain + Azure OpenAI)
 
@@ -196,8 +207,58 @@ In modalità `TEST_MODE=True`, la funzione ritorna immediatamente con un messagg
 | `EmbeddingDocument` | `chunk_text` | Campo testo su cui opera la ricerca full-text (BM25) |
 | `EmbeddingDocument` | `embedding` | Campo vettore su cui opera la ricerca semantica (HNSW) |
 
-### 4.7 Motore RAG e risposta finale
-*(Da completare in seguito)*
+### 4.7 Motore RAG e Risposta Finale (`POST /search/rag`)
+
+L'endpoint `POST /search/rag`, implementato in `app/routers/search.py`, implementa la pipeline RAG completa per la ricerca in linguaggio naturale sull'archivio di articoli.
+
+#### Flusso della pipeline RAG
+
+1. **Embedding della domanda**: La stringa di testo della domanda (`query.question`) viene convertita in un vettore embedding a 1536 dimensioni tramite `generate_embedding_for_chunks([query.question])`. Il risultato è una lista con un singolo vettore, da cui si estrae il primo elemento (`query_embedding[0]`).
+
+2. **Ricerca dei chunk rilevanti** (`search_relevant_chunks`): Il vettore della domanda viene passato a `search_service.search_relevant_chunks()`, che esegue una ricerca vettoriale su Azure AI Search tramite `VectorizedQuery` con `k_nearest_neighbors=3`. La funzione restituisce una lista di dizionari, ognuno contenente `article_id`, `chunk_text` e `score` (punteggio di rilevanza). Se nessun chunk supera la soglia, l'endpoint restituisce una risposta "non trovato" senza invocare il modello linguistico.
+
+3. **Generazione della risposta RAG** (`generate_rag_answer`): I chunk rilevanti vengono assemblati in un unico contesto testuale e passati al modello `gpt-4o-mini` tramite un `ChatPromptTemplate` bipartito (system + human). Il **system message** vincola esplicitamente il modello a rispondere basandosi **esclusivamente** sul contesto fornito, senza accedere a conoscenze esterne, con fallback esplicito in caso di assenza di informazioni pertinenti. La chain `rag_prompt | llm` viene invocata in modo asincrono tramite `ainvoke()`, garantendo la piena compatibilità con il runtime di FastAPI.
+
+4. **Risposta strutturata**: L'endpoint restituisce un payload JSON con tre campi: `question` (domanda originale), `answer` (testo generato dal LLM) e `relevant_chunks` (lista dei chunk sorgente con score e article_id, per tracciabilità delle fonti).
+
+#### Endpoint di ricerca per keyword (`POST /search/generic`)
+
+In parallelo al motore RAG, il sistema espone un endpoint `POST /search/generic` per la ricerca tradizionale per parola chiave. La funzione `cosmos_service.search_by_keywords()` esegue una query Cosmos DB SQL con `CONTAINS()` su cinque campi del documento (`title`, `description`, `category`, `author`, `tags`), con corrispondenza case-insensitive. L'endpoint è concepito per ricerche rapide e filtri informativi, complementari alla ricerca semantica RAG.
+
+### 4.8 Endpoint di Lettura Articoli
+
+#### `GET /articles` — Lista articoli con paginazione e filtri
+
+L'endpoint restituisce una lista paginata di articoli, supportando i seguenti query parameter:
+
+| Parametro | Tipo | Default | Semantica |
+|-----------|------|---------|-----------|
+| `decreasing` | `bool` | `false` | Ordine cronologico crescente (true) o decrescente (false) |
+| `category` | `str` | `None` | Filtro per categoria tematica |
+| `skip` | `int` | `0` | Offset per la paginazione (infinite scroll) |
+| `limit` | `int` | `10` | Numero massimo di articoli restituiti per pagina |
+
+La funzione `cosmos_service.get_articles_list()` costruisce la query Cosmos DB dinamicamente, aggiungendo la clausola `WHERE` solo se `category` è fornita, e applicando `ORDER BY c.uploaded_at` con la direzione appropriata. La proiezione SQL seleziona solo i campi necessari per la lista (`id`, `title`, `author`, `category`, `blob_url`, `cover_url`, `uploaded_at`), minimizzando il volume di dati trasferiti.
+
+#### `GET /articles/{article_id}` — Dettaglio articolo
+
+L'endpoint restituisce il documento completo di un articolo dato il suo UUID, arricchito con la lista dei chunk testali associati. La funzione `cosmos_service.get_article_by_id()` sfrutta la lettura a punto (`read_item`) di Cosmos DB, operazione a costo O(1) grazie alla chiave di partizione coincidente con `article_id`. I chunk vengono recuperati separatamente da `cosmos_service.get_chunks_by_article_id()` tramite una query sul container `chunks`, ordinata per `chunk_index ASC` per preservare l'ordine sequenziale del documento originale. In caso di `article_id` inesistente, l'endpoint restituisce `HTTP 404 Not Found`.
+
+### 4.9 Autenticazione tramite Keycloak (OIDC/JWT)
+
+Il sistema di autenticazione è implementato nel modulo `autentication/keycloack_service.py`, che espone una dipendenza FastAPI (`get_current_user`) riutilizzabile da qualsiasi endpoint che richieda protezione.
+
+#### Architettura della verifica token
+
+La verifica dei token si basa sullo standard **OpenID Connect (OIDC)** con algoritmo di firma **RS256** (RSA con SHA-256). Il flusso è il seguente:
+
+1. **Estrazione Bearer token**: FastAPI estrae automaticamente il token JWT dall'header `Authorization: Bearer <token>` tramite `HTTPBearer`.
+2. **Download delle chiavi pubbliche JWKS**: La funzione `get_keycloak_public_keys()` scarica dinamicamente il **JWKS (JSON Web Key Set)** dall'endpoint pubblico di Keycloak (`/realms/{realm}/protocol/openid-connect/certs`). Questo approccio elimina la necessità di distribuire le chiavi pubbliche staticamente nel backend: Keycloak gestisce la rotazione delle chiavi in modo trasparente.
+3. **Verifica crittografica**: La libreria `python-jose` decodifica e verifica il token JWT verificando la firma RSA, la scadenza (`exp`) e l'issuer (`iss`) contro il realm Keycloak configurato.
+4. **Restituzione payload**: Se la verifica ha successo, il payload del token (contenente `sub`, `preferred_username`, `roles` e gli altri claim OIDC standard) viene restituito come dizionario Python e iniettato nelle funzioni handler tramite `Depends(get_current_user)`.
+5. **Risposta 401**: In caso di token assente, scaduto, alterato o con firma non valida, viene sollevata una `HTTPException 401 Unauthorized` con header `WWW-Authenticate: Bearer`.
+
+L'infrastruttura Keycloak è orchestrata localmente tramite il file `docker-compose.yml` nel modulo `autentication/`, che avvia un'istanza containerizzata del server per lo sviluppo e il test.
 
 ## 5. Trasparenza IA e Metodologia di Sviluppo
 
@@ -227,6 +288,7 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
  Code Review e Task 2.4 — Generazione metadati AI (LangChain + Azure OpenAI) | Claude Sonnet 4.6 | "Esegui code review architetturale e funzionale del Task 2.4. Verifica l'integrazione con AzureChatOpenAI e LangChain, l'uso di Pydantic per output JSON strutturato, la gestione degli errori e i conflitti con il runtime asincrono di FastAPI. Aggiorna implementation_plan.md e scrivi la sezione 4.5 della relazione." | Identificati e corretti 3 bug: (1) `await` mancante su `generate_ai_metadata()` in `articles.py` (coroutine mai eseguita); (2) nome variabile errato `AZURE_OPENAI_API_KEY` → `AZURE_OPENAI_KEY` in `ai_service.py`; (3) deployment hardcoded `"gpt-4.1-mini"` sostituito con `settings.AZURE_OPENAI_CHAT_DEPLOYMENT`. Migliorata gestione errori con `HTTPException 503`.|
  Code Review Task 2.6 — Indicizzazione vettoriale su Azure AI Search (`search_service.py`) | Claude Sonnet 4.6 | "Esegui la code review della funzione `index_chunk_to_ai_search`. Verifica l'uso corretto di `zip()` ed `enumerate()`, la serializzazione Pydantic con `model_dump()`, la gestione asincrona del client Search e la presenza del blocco TEST_MODE. Aggiorna la sezione 4.6 della relazione." | **Codice scritto interamente dallo studente.** L'IA è stata utilizzata esclusivamente come strumento di code review e validazione. Identificati e corretti 4 bug: (1) import errato `azure.search.documents.SearchClient` (sincrono) → `azure.search.documents.aio.SearchClient` (asincrono); uso del client sincrono con `await` e `async with` genera `TypeError` a runtime bloccando l'event loop di FastAPI; (2) chiave di configurazione inesistente `settings.AZURE_SEARCH_KEY` → `settings.AZURE_SEARCH_ADMIN_KEY` (nome corretto in `config.py`); (3) assenza del blocco `TEST_MODE` presente invece in tutti gli altri servizi; (4) rientro del codice errato (indentazione a doppio livello della funzione). |
 | Scelta del protocollo di sicurezza | Gemini 1.5 Pro | "Ragiona come un Software Engineer professionista e valuta quale approccio per gestire l'autenticazione di un utente si adegua al mio progetto tra JWT e MSAL." | Analisi comparativa tra MSAL (Azure Entra ID B2C) e JWT custom. Stesura del documento di decisione architetturale (ADR) con scelta motivata verso JWT tramite FastAPI e Cosmos DB per dimostrare competenze backend, mantenere coesione dei dati ed evitare over-engineering infrastrutturale. |
+| Implementazione Keycloak e Autenticazione | Gemini 1.5 Pro | "Ragiona come un web Security expert professionista e implementa i servizi di keycloack inoltre effettua una core rewie sull'aggiunta dell'upload dei file con immagini" | Code review funzionale per l'integrazione dell'upload delle copertine (`cover_url`) su Blob Storage e fix dei deadlock asincroni. Check architetturale di Keycloak come Identity Provider su infrastruttura Azure, abbandonando l'approccio Custom JWT per rispettare la best practice "Don't roll your own crypto" aggirando i limiti della sottoscrizione studentesca e implementazione delle funzioni get_current_user e get_keycloak_public_key nel file keycloak_service.py . |
 
 
 

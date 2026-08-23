@@ -1,7 +1,6 @@
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query,Depends
 from datetime import datetime, timezone
-
 from app.models.article import ManualMetadata, ArticleDocument
 from app.services.blob_service import uploaded_file_to_blob,upload_cover
 from app.services.cosmos_service import save_article_metadata, save_chunks_metadata, get_articles_list, get_article_by_id,get_chunks_by_article_id
@@ -9,7 +8,7 @@ from app.services.ai_service import generate_ai_metadata, chunking, generate_emb
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
 from app.services.search_service import index_chunk_to_ai_search,check_similarity
-
+from autentication.keycloack_service import get_current_user
 router = APIRouter()
 
 @router.post("/articles/upload", status_code=status.HTTP_201_CREATED, summary="Carica un articolo su Blob Storage")
@@ -20,7 +19,8 @@ async def upload_file(
         author: str = Form(None),
         category: str = Form(None),
         description: str = Form(None),
-        tags: str = Form(None) ):
+        tags: str = Form(None),
+        current_user: dict = Depends(get_current_user)):
 
 
 

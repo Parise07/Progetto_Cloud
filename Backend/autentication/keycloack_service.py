@@ -4,8 +4,17 @@ from jose import jwt, JWTError
 import urllib.request
 import json
 from app.config import settings
+from keycloak import KeycloakAdmin
 
-security=HTTPBearer()
+keycloak_admin = KeycloakAdmin(
+    server_url= settings.KEYCLOAK_SERVER_URL,
+    client_id= settings.KEYCLOAK_CLIENT_ID,
+    realm_name= settings.KEYCLOAK_REALM
+)
+
+security = HTTPBearer()
+
+
 
 def get_keycloak_public_keys():
     ''' funzione che scarica le chiavi pubbliche e verifica matematicamente che il token
@@ -25,7 +34,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
     try:
         # 2. Scarichiamo le chiavi da Keycloak
         jwks = get_keycloak_public_keys()
-
         # 3. Leggiamo e verifichiamo il token
         payload = jwt.decode(
             token,

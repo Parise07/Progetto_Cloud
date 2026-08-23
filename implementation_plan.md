@@ -251,8 +251,8 @@ Il progetto viene sviluppato in fasi incrementali, ognuna con demo funzionante.
 
 ### FASE 3 — Backend: RAG e Ricerca
 - [x] **Task 3.1**: Endpoint `POST /search/query` (ricerca in linguaggio naturale)
-- [ ] **Task 3.2**: Endpoint `GET /articles` (lista articoli con filtri)
-- [ ] **Task 3.3**: Endpoint `GET /articles/{id}` (dettaglio articolo + chunk)
+- [x] **Task 3.2**: Endpoint `GET /articles` (lista articoli con filtri)
+- [x] **Task 3.3**: Endpoint `GET /articles/{id}` (dettaglio articolo + chunk)
 
 ### FASE 4 — Frontend Flutter
 - [ ] **Task 4.1**: Struttura app + navigazione tra schermate
