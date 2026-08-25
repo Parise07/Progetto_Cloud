@@ -1,17 +1,33 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/upload_page.dart';
+import 'package:frontend/shared_preferences.dart';
+import 'package:frontend/utils.dart';
 
-// ==========================================================================
+import 'pages/detail_page.dart';
+import 'pages/info_page.dart';
+import 'pages/login_page.dart';
+import 'package:http/http.dart' as http;
+
+
 // Colori globali dell'applicazione
-// ==========================================================================
-/// Colore principale — Navy scuro, elegante e autorevole per un'app di notizie.
-/// Utilizzato per AppBar, Drawer header e accenti primari.
-const Color colorePrincipale = Color(0xFF1B1B1B);
 
-/// Colore secondario — Ambra dorata, calda e raffinata.
-/// Utilizzato per il contenitore degli strumenti nell'AppBar e accenti secondari.
-const Color coloreSecondario = Color(0xFF9B111E);
+/// 60% - Sfondo: Grigio chiarissimo elegante. Fa risaltare le card bianche.
+const Color coloreSfondo = Color(0xFFF4F6F8);
 
-void main() {
+/// 30% - Struttura: Navy scuro. Per AppBar, Testi, Drawer e icone principali.
+const Color colorePrincipale = Color(0xFF7F5539);
+
+/// 10% - Accento: Rosso Rubino. Usato SOLO per Call to Action, Switch attivi, Loader.
+const Color coloreAccento = Color(0xFFFF6B35);
+
+Future<void> main() async {
+  // mi assicuro che flutter sia pronto prima di eseguire del codice
+  WidgetsFlutterBinding.ensureInitialized();
+
+  //inizializzo il database locale prima di tutto
+  await SharedPreferenceManager.init();
   runApp(const MyApp());
 }
 
@@ -25,24 +41,21 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        scaffoldBackgroundColor: coloreSfondo,
         colorScheme: ColorScheme.fromSeed(
           seedColor: colorePrincipale,
           brightness: Brightness.light,
           primary: colorePrincipale,
-          secondary: coloreSecondario,
-          onPrimary: Colors.white,
-          onSecondary: colorePrincipale,
-          primaryContainer: colorePrincipale.withAlpha(30),
-          secondaryContainer: coloreSecondario.withAlpha(60),
+          secondary: coloreAccento,
+          surface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(
           centerTitle: false,
           backgroundColor: colorePrincipale,
           foregroundColor: Colors.white,
-          elevation: 6,
-          shadowColor: Colors.black54,
+          elevation: 2,
+          shadowColor: Colors.black26,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF5F5F5),
       ),
       home: const MyHomePage(title: 'NewsArchive'),
     );
@@ -61,7 +74,7 @@ class _MyHomePageState extends State<MyHomePage> {
   final scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
-
+  bool _isLogin = false;
   // --- Stato della pagina ---
   bool _isRagMode = false;
   String _selectedCategory = 'Tutte';
@@ -71,7 +84,7 @@ class _MyHomePageState extends State<MyHomePage> {
   final int _limit = 10;
 
   // Lista articoli caricati (mock per ora, predisposta per API)
-  final List<Map<String, dynamic>> _articles = [];
+  final List<Articolo> _articles = [];
 
   // Categorie disponibili per il filtro dropdown
   final List<String> _categories = [
@@ -82,12 +95,14 @@ class _MyHomePageState extends State<MyHomePage> {
     'Sport',
     'Cultura',
     'Scienza',
+    'Altro',
   ];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _checkLoginStatus();
     _loadArticles(); // Caricamento iniziale
   }
 
@@ -109,6 +124,13 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _checkLoginStatus() async{
+    String? accessToken = SharedPreferenceManager.instance.getString('access');
+     setState(() {
+       _isLogin= accessToken != null;
+     });
+  }
+
   /// Carica gli articoli (mock). In produzione, questa funzione invocherà
   /// GET /articles?skip=_skip&limit=_limit&category=...
   Future<void> _loadArticles() async {
@@ -117,39 +139,35 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _isLoading = true;
     });
+    try {
+      String url = 'http://localhost:8000/articles?skip=$_skip&limit=$_limit';
+      if (_selectedCategory != 'Tutte') {
+        url += '&category=$_selectedCategory';
+      }
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> items = data['articles'] ?? [];
+        setState(() {
+          _articles.addAll(
+              items.map((item) => Articolo.fromJson(item)).toList());
+          _skip += items.length;
+          _hasMore = items.length == _limit;
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          debugPrint('Errore caricamento articoli: ${response.statusCode}');
+        });
+      }
+      } catch (e) {
+        setState(() {
+          _isLoading=false;
+          debugPrint('Errore di connessione HTTP: $e');
+        });
+    }
 
-    // --- TODO: Sostituire con chiamata HTTP reale ---
-    // final response = await http.get(Uri.parse(
-    //   '$baseUrl/articles?skip=$_skip&limit=$_limit'
-    //   '${_selectedCategory != 'Tutte' ? '&category=$_selectedCategory' : ''}'
-    // ));
-    // final data = jsonDecode(response.body);
-    // final List<Map<String, dynamic>> newArticles =
-    //     List<Map<String, dynamic>>.from(data['articles']);
-
-    // Simulazione di dati mock per la UI
-    await Future.delayed(const Duration(milliseconds: 800));
-    final List<Map<String, dynamic>> newArticles = List.generate(
-      _limit,
-      (index) => {
-        'id': 'article-${_skip + index}',
-        'title': 'Articolo di esempio #${_skip + index + 1}',
-        'author': 'Autore ${_skip + index + 1}',
-        'category': _categories[(_skip + index) % (_categories.length - 1) + 1],
-        'cover_url': '', // Placeholder: nessuna immagine di copertina
-        'uploaded_at': DateTime.now()
-            .subtract(Duration(days: _skip + index))
-            .toIso8601String(),
-      },
-    );
-    // --- FINE Mock ---
-
-    setState(() {
-      _articles.addAll(newArticles);
-      _skip += newArticles.length;
-      _hasMore = newArticles.length == _limit;
-      _isLoading = false;
-    });
   }
 
   /// Resetta la lista e ricarica da zero (es. dopo cambio filtro o ricerca)
@@ -164,16 +182,55 @@ class _MyHomePageState extends State<MyHomePage> {
 
   /// Esegue la ricerca. In modalità RAG invoca POST /search/rag,
   /// altrimenti POST /search/generic.
-  void _performSearch(String query) {
+  Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
+    setState(() {
+      _isLoading = true;
+      _articles.clear();
+    });
+    String url = _isRagMode
+        ? 'http://localhost:8000/search/rag'
+        : 'http://localhost:8000/search/generic';
 
-    // TODO: Implementare la chiamata API di ricerca
-    // if (_isRagMode) {
-    //   POST /search/rag { "question": query }
-    // } else {
-    //   POST /search/generic { "keyword": query }
-    // }
+    try{
+        final Map<String, dynamic> requestBody = _isRagMode
+        ? {'question': query.trim()}
+        :  {'keyword': query.trim()};
+        final response = await http.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(requestBody),
+        );
+        if (response.statusCode == 200){
+          final Map<String, dynamic> responseData = jsonDecode(response.body);
+          setState(() {
+            if(_isRagMode){
+              final String aiAnswer = responseData['answer'] ?? "Nessuna risposta.";
+              final List<dynamic> relevant_chunk =responseData['relevant_chunks'] ?? [];
 
+              //TODO portarlo nella Rag page per visualizzare le conversazioni
+              debugPrint('Risposta RAG');
+              _isLoading=false;
+            }else{
+              final String corrispondenze = responseData['message'] ?? "Nessuna corrispondenza trovata";
+              final List<dynamic> results= responseData ['results'] ?? [];
+              _articles.addAll(results.map((item) => Articolo.fromJson(item as Map<String, dynamic>)).toList());
+              _hasMore = false;
+              _isLoading = false;
+            }
+          });
+        }else{
+          setState(() {
+            _isLoading = false;
+          });
+          print('Errore nel recupero dei prodotti: ${response.statusCode}');
+        }
+    }catch(e){
+      setState(() {
+        _isLoading = false;
+      });
+      debugPrint('Errore di connessione HTTP: $e');
+    }
     debugPrint('Ricerca ${_isRagMode ? "RAG" : "Keyword"}: $query');
   }
 
@@ -182,57 +239,47 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       key: scaffoldKey,
 
-      // ===================================================================
-      // APP BAR: Titolo | Filtro Dropdown | Barra di Ricerca | Switch RAG
-      // ===================================================================
+      // APP BAR
+
       appBar: AppBar(
-        titleSpacing: 16,
-        elevation: 6,
-        shadowColor: Colors.black54,
+        titleSpacing: 24,
         title: Row(
           children: [
             // --- Titolo a sinistra ---
             const Text(
               'NewsArchive',
               style: TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w800,
                 fontSize: 22,
                 color: Colors.white,
                 letterSpacing: 0.5,
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: 48),
 
-            // =============================================================
-            // Contenitore unico con sfondo coloreSecondario e bordi
-            // arrotondati: raggruppa Filtri + Ricerca + Switch RAG/Normal
-            // =============================================================
-            Expanded(
-              child: Container(
+            // container ricerca switch e categorie
+            Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
+                  horizontal: 16,
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: coloreSecondario,
-                  borderRadius: BorderRadius.circular(28),
+                  color: Colors.white.withAlpha(20),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // --- Dropdown Filtro Categorie ---
-                    DropdownButtonHideUnderline(
+                child: DropdownButtonHideUnderline(
+                  // seleziona categoria
                       child: DropdownButton<String>(
                         value: _selectedCategory,
                         icon: Icon(
-                          Icons.filter_list,
-                          color: colorePrincipale.withAlpha(200),
+                          Icons.arrow_drop_down,
+                          color: Colors.white70,
                           size: 20,
                         ),
-                        dropdownColor: coloreSecondario,
+                        dropdownColor: colorePrincipale,
                         style: const TextStyle(
                           fontSize: 14,
-                          color: colorePrincipale,
+                          color: Colors.white,
                           fontWeight: FontWeight.w500,
                         ),
                         items: _categories.map((String category) {
@@ -250,37 +297,38 @@ class _MyHomePageState extends State<MyHomePage> {
                           }
                         },
                       ),
-                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                    child:Container(
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withAlpha(25),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
 
-                    // --- Separatore verticale ---
-                    Container(
-                      height: 24,
-                      width: 1,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      color: colorePrincipale.withAlpha(60),
-                    ),
-
-                    // --- Barra di Ricerca ---
-                    Expanded(
+                      //barra di ricerca
                       child: TextField(
                         controller: _searchController,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
                         decoration: InputDecoration(
                           hintText: 'Cerca articoli...',
                           hintStyle: TextStyle(
-                            color: colorePrincipale.withAlpha(120),
+                            color: Colors.white54,
                             fontSize: 14,
                           ),
                           prefixIcon: Icon(
                             Icons.search,
                             size: 20,
-                            color: colorePrincipale.withAlpha(180),
+                            color: Colors.white70,
                           ),
                           suffixIcon: _searchController.text.isNotEmpty
                               ? IconButton(
                                   icon: Icon(
                                     Icons.clear,
                                     size: 18,
-                                    color: colorePrincipale.withAlpha(180),
+                                    color: Colors.white70,
                                   ),
                                   onPressed: () {
                                     _searchController.clear();
@@ -288,69 +336,38 @@ class _MyHomePageState extends State<MyHomePage> {
                                   },
                                 )
                               : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none,
-                          ),
-                          filled: true,
-                          fillColor: Colors.white.withAlpha(150),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 0,
-                            horizontal: 16,
-                          ),
-                          isDense: true,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: colorePrincipale,
+                          border:InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                         ),
                         onSubmitted: _performSearch,
-                        onChanged: (value) {
-                          setState(() {}); // Aggiorna icona clear
-                        },
+                        onChanged: (value) => setState(() {}),
                       ),
                     ),
-
-                    // --- Separatore verticale ---
-                    Container(
-                      height: 24,
-                      width: 1,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      color: colorePrincipale.withAlpha(60),
-                    ),
-
-                    // --- Switch RAG / Normal (label DOPO lo switch) ---
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Switch(
-                          value: _isRagMode,
-                          onChanged: (bool value) {
-                            setState(() {
-                              _isRagMode = value;
-                            });
-                          },
-                          activeColor: colorePrincipale,
-                          activeTrackColor: colorePrincipale.withAlpha(100),
-                          inactiveThumbColor: colorePrincipale.withAlpha(150),
-                          inactiveTrackColor: colorePrincipale.withAlpha(40),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _isRagMode ? 'RAG' : 'Normal',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: colorePrincipale.withAlpha(220),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
-              ),
+                const SizedBox(width: 32),
+              // --- Switch RAG / Normal (label DOPO lo switch) ---
+            Row(
+              children: [
+                Text(
+                  'RAG',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _isRagMode ? Colors.white : Colors.white54,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: _isRagMode,
+                  onChanged: (bool value) => setState(() => _isRagMode = value),
+                  activeColor: Colors.white,
+                  activeTrackColor: coloreAccento, // Il tocco di rosso per l'IA!
+                  inactiveThumbColor: Colors.white70,
+                  inactiveTrackColor: Colors.white.withAlpha(30),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
           ],
         ),
         actions: [
@@ -365,10 +382,10 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
 
-      // ===================================================================
-      // DRAWER LATERALE (a destra): Login, Cronologia, Update, Info
-      // ===================================================================
+
+      // Menù a tendina Laterale
       endDrawer: Drawer(
+        backgroundColor: coloreSfondo,
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
@@ -383,7 +400,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   const Icon(
                     Icons.newspaper,
                     size: 48,
-                    color: coloreSecondario,
+                    color: coloreAccento,
                   ),
                   const SizedBox(height: 8),
                   const Text(
@@ -405,299 +422,235 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
 
-            // Log-in
-            ListTile(
-              leading: const Icon(Icons.login, color: colorePrincipale),
-              title: const Text('Log-in'),
-              subtitle: const Text('Accedi con il tuo account'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Navigazione verso schermata di login (Keycloak)
-                debugPrint('Navigazione: Log-in');
-              },
-            ),
+            // Log-in o log-out
+            if (_isLogin)
+            // Se è loggato, mostra LOG-OUT
+              _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
+                // Svuota la memoria locale (elimina il token JWT)
+                await SharedPreferenceManager.clear();
+
+                // Opzionale: torna al Login distruggendo tutto lo stack di pagine
+                if (context.mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                        (Route<dynamic> route) => false,
+                  );
+                }
+              })
+            else
+            // Se NON è loggato, mostra LOG-IN
+              _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                ).then((_) {
+                  // Quando l'utente torna indietro dal Login, ricontrolla lo stato!
+                  _checkLoginStatus();
+                });
+              }),
             const Divider(),
-
-            // Cronologia articoli
-            ListTile(
-              leading: const Icon(Icons.history, color: colorePrincipale),
-              title: const Text('Cronologia articoli'),
-              subtitle: const Text('Articoli visualizzati di recente'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Navigazione verso cronologia
-                debugPrint('Navigazione: Cronologia');
-              },
-            ),
-
-            // Update articolo
-            ListTile(
-              leading: const Icon(Icons.upload_file, color: colorePrincipale),
-              title: const Text('Upload articolo'),
-              subtitle: const Text('Carica un nuovo articolo'),
-              onTap: () {
-                Navigator.pop(context);
-                // TODO: Navigazione verso upload_screen.dart
-                debugPrint('Navigazione: Upload articolo');
-              },
-            ),
-
-            // Informazioni
-            ListTile(
-              leading: const Icon(Icons.info_outline, color: colorePrincipale),
-              title: const Text('Informazioni'),
-              subtitle: const Text('Info sul sistema e versione'),
-              onTap: () {
-                Navigator.pop(context);
-                showAboutDialog(
-                  context: context,
-                  applicationName: 'NewsArchive RAG',
-                  applicationVersion: '1.0.0',
-                  applicationLegalese: '© 2026 Progetto Cloud',
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 16),
-                      child: Text(
-                        'Sistema RAG per l\'Archiviazione e '
-                        'Ricerca di Notizie basato su Azure.',
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
+            _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+              );
+            },),
+            _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const  UploadScreen()),
+              );
+            },),
+            _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info sistema',() {
+            Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+            );
+            },),
+            _buildDrawerItem(Icons.psychology_outlined, 'RAG', 'Risposte del sistema RAG',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const  UploadScreen()), // todo portarlo in RAG page
+              );
+            },),
           ],
         ),
       ),
 
-      // ===================================================================
+
       // BODY: Infinite Scroll con GridView.builder di Card articolo
-      // ===================================================================
+
       body: RefreshIndicator(
-        color: coloreSecondario,
-        backgroundColor: colorePrincipale,
+        color: coloreAccento,
+        backgroundColor: Colors.white,
         onRefresh: _refreshArticles,
         child: _articles.isEmpty && _isLoading
-            ? Center(
-                child: CircularProgressIndicator(
-                  color: coloreSecondario,
-                  backgroundColor: colorePrincipale.withAlpha(30),
-                ),
-              )
-            : _articles.isEmpty && !_isLoading
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.article_outlined,
-                          size: 64,
-                          color: colorePrincipale.withAlpha(77),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Nessun articolo trovato',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: colorePrincipale.withAlpha(153),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.all(12.0),
-                    child: GridView.builder(
-                      controller: _scrollController,
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 5,
-                        childAspectRatio: 0.80,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      // +1 per il loader in fondo alla lista
-                      itemCount: _articles.length + (_hasMore ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        // Loader di paginazione (ultimo elemento)
-                        if (index == _articles.length) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: CircularProgressIndicator(
-                                color: coloreSecondario,
-                                backgroundColor: colorePrincipale.withAlpha(30),
-                              ),
-                            ),
-                          );
-                        }
-                        return _buildArticleCard(_articles[index]);
-                      },
-                    ),
-                  ),
+            ? const Center(child: CircularProgressIndicator(color: coloreAccento))
+            : Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+          child: GridView.builder(
+            controller: _scrollController,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 5,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 20,
+              mainAxisSpacing: 20,
+            ),
+            itemCount: _articles.length + (_hasMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index == _articles.length) {
+                return const Center(child: CircularProgressIndicator(color: coloreAccento));
+              }
+              return _buildArticleCard(_articles[index]);
+            },
+          ),
+        ),
       ),
+    );
+  }
+
+
+  Widget _buildDrawerItem(IconData icon, String title, String subtitle, VoidCallback onTapAction) {
+    return ListTile(
+      leading: Icon(icon, color: colorePrincipale),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      onTap: () {
+        Navigator.pop(context); // Chiude il drawer prima di navigare
+        onTapAction(); // Esegue l'azione di navigazione
+      },
     );
   }
 
   /// Costruisce una singola Card per un articolo.
   /// Layout: Immagine di copertina (cover_url) in alto, sotto titolo e autore.
-  Widget _buildArticleCard(Map<String, dynamic> article) {
-    final String title = article['title'] ?? 'Senza titolo';
-    final String author = article['author'] ?? 'Autore sconosciuto';
-    final String coverUrl = article['cover_url'] ?? '';
-    final String category = article['category'] ?? '';
+  Widget _buildArticleCard(Articolo article) {
+    final String title = article.title ?? 'Senza titolo';
+    final String author = article.author ?? 'Autore sconosciuto';
+    final String coverUrl = article.coverUrl?? '';
+    final List<String> category = article.category ?? [] ;
 
-    return Card(
-      elevation: 3,
-      shadowColor: colorePrincipale.withAlpha(40),
-      color: Colors.white,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorePrincipale.withAlpha(15),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
-      child: InkWell(
-        onTap: () {
-          // TODO: Navigazione verso article_detail_screen.dart
-          // Navigator.push(context, MaterialPageRoute(
-          //   builder: (_) => ArticleDetailScreen(articleId: article['id']),
-          // ));
-          debugPrint('Apri dettaglio articolo: ${article['id']}');
-        },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- Immagine di copertina (cover_url) ---
-            Expanded(
-              flex: 3,
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: colorePrincipale.withAlpha(15),
+      clipBehavior: Clip.antiAlias,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ArticleDetailScreen(articleId: article.id ,)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+
+              // Immagine card
+              Expanded(
+                flex: 5,
+                child: Container(
+                  width: double.infinity,
+                  color: coloreSfondo, // Sfondo per il placeholder
+                  child: coverUrl.isNotEmpty
+                      ? Image.network(
+                    coverUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(category.isNotEmpty ? category.first : ''),
+                  )
+                      : _buildPlaceholderImage(category.isNotEmpty ? category.first : ''),
                 ),
-                child: coverUrl.isNotEmpty
-                    ? Image.network(
-                        coverUrl,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        // Gestione errore di caricamento immagine
-                        errorBuilder: (context, error, stackTrace) {
-                          return _buildPlaceholderImage(category);
-                        },
-                      )
-                    : _buildPlaceholderImage(category),
               ),
-            ),
 
-            // --- Sezione descrittiva: Titolo + Autore ---
-            Expanded(
-              flex: 2,
-              child: Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Badge categoria
-                    if (category.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
+              // Dettagli
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Lista di categorie
+                      if (category.isNotEmpty)
+                        Wrap(
+                          spacing: 6.0, // spazio orizzontale tra i badge
+                          runSpacing: 4.0, // spazio verticale se vanno a capo
+                          children: category.map((c) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: coloreAccento.withAlpha(20),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              c.toUpperCase(),
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: coloreAccento,
+                                  letterSpacing: 0.5
+                              ),
+                            ),
+                          )).toList(),
                         ),
-                        decoration: BoxDecoration(
-                          color: coloreSecondario.withAlpha(60),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          category,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: colorePrincipale,
-                          ),
-                        ),
-                      ),
-                    const SizedBox(height: 4),
+                      const Spacer(),
 
-                    // Titolo dell'articolo
-                    Expanded(
-                      child: Text(
+                      // Titolo
+                      Text(
                         title,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          height: 1.2,
-                          color: colorePrincipale,
-                        ),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.2, color: colorePrincipale),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-
-                    // Autore
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 14,
-                          color: colorePrincipale.withAlpha(130),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            author,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colorePrincipale.withAlpha(130),
+                      const SizedBox(height: 8),
+                      // Autore
+                      Row(
+                        children: [
+                          const Icon(Icons.edit_document, size: 14, color: Colors.grey),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              author,
+                              style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// Placeholder per quando l'immagine di copertina non è disponibile.
-  /// Mostra un'icona in base alla categoria dell'articolo.
+  /// Visualizzazione immagine se non è stata caricata
   Widget _buildPlaceholderImage(String category) {
     IconData icon;
-    switch (category) {
-      case 'Politica':
-        icon = Icons.account_balance;
-        break;
-      case 'Economia':
-        icon = Icons.trending_up;
-        break;
-      case 'Tecnologia':
-        icon = Icons.computer;
-        break;
-      case 'Sport':
-        icon = Icons.sports_soccer;
-        break;
-      case 'Cultura':
-        icon = Icons.palette;
-        break;
-      case 'Scienza':
-        icon = Icons.science;
-        break;
-      default:
-        icon = Icons.article;
+    switch (category.toLowerCase()) {
+      case 'politica': icon = Icons.account_balance; break;
+      case 'economia': icon = Icons.trending_up; break;
+      case 'ecnologia': icon = Icons.memory; break;
+      case 'sport': icon = Icons.sports_soccer; break;
+      case 'cultura': icon = Icons.palette; break;
+      case 'scienza': icon = Icons.biotech; break;
+      default: icon = Icons.article_outlined;
     }
-
     return Center(
-      child: Icon(
-        icon,
-        size: 48,
-        color: coloreSecondario.withAlpha(100),
-      ),
+      child: Icon(icon, size: 56, color: colorePrincipale.withAlpha(50)),
     );
   }
 }

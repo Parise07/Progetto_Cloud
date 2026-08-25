@@ -4,12 +4,23 @@ from jose import jwt, JWTError
 import urllib.request
 import json
 from app.config import settings
-from keycloak import KeycloakAdmin
+from keycloak import KeycloakAdmin, KeycloakError, KeycloakOpenID
+
 
 keycloak_admin = KeycloakAdmin(
     server_url= settings.KEYCLOAK_SERVER_URL,
-    client_id= settings.KEYCLOAK_CLIENT_ID,
-    realm_name= settings.KEYCLOAK_REALM
+    client_id= "admin-cli",
+    realm_name= settings.KEYCLOAK_REALM,
+    user_realm_name="master",
+    username="admin",
+    password="admin",
+    verify = True
+)
+
+keycloak_openid = KeycloakOpenID(
+    server_url=settings.KEYCLOAK_SERVER_URL,
+    client_id=settings.KEYCLOAK_CLIENT_ID,
+    realm_name=settings.KEYCLOAK_REALM
 )
 
 security = HTTPBearer()
@@ -32,9 +43,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
     token = credentials.credentials
 
     try:
-        # 2. Scarichiamo le chiavi da Keycloak
         jwks = get_keycloak_public_keys()
-        # 3. Leggiamo e verifichiamo il token
         payload = jwt.decode(
             token,
             jwks,
@@ -42,9 +51,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
             issuer=f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}",
             options={"verify_aud": False}  # Disattivato per semplificare i test locali
         )
-
-        # 4. Se il codice arriva qui, significa che il token è VERO e NON È SCADUTO!
-        # Restituiamo i dati dell'utente (il payload) in modo che le rotte sappiano chi è loggato
         return payload
 
     except JWTError:
@@ -54,3 +60,41 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
             detail="Token non valido, alterato o scaduto.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+
+def addUtente(username: str, email: str, password: str):
+
+    try:
+        new_user = {
+            "username": username,
+            "email": email,
+            "enabled": True,  # L'utente è subito attivo
+            "credentials": [{
+                "value": password,
+                "type": "password",
+                "temporary": False  # Non chiediamo il cambio password al primo login
+            }]
+        }
+        # Chiamata al server Keycloak tramite l'oggetto admin
+        user_id = keycloak_admin.create_user(new_user)
+        print(f"Utente {username} creato con successo in Keycloak. ID: {user_id}")
+        return user_id
+
+    except KeycloakError as e:
+        print(f"Errore durante la creazione dell'utente su Keycloak: {e}")
+        # Se l'utente esiste già o c'è un errore, blocchiamo la richiesta HTTP
+        raise HTTPException(status_code=400, detail="Impossibile creare l'utente. Potrebbe già esistere.")
+
+
+def login_user(username: str, password: str):
+    """
+    Invia username e password a Keycloak e restituisce i token JWT.
+    """
+    try:
+        # Recupera il token da Keycloak usando il flusso "Direct Access"
+        token = keycloak_openid.token(username, password)
+        print(f"Utente {username} loggato con successo.")
+        return token
+    except KeycloakError as e:
+        print(f"Errore di login su Keycloak: {e}")
+        raise HTTPException(status_code=401, detail="Username o password non validi")

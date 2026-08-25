@@ -22,7 +22,7 @@ async def search_rag_articles(query: RagSearchQuery):
         return {
             "question": query.question,
             "answer": "Non ho trovato documenti pertinenti alla tua domanda nel nostro archivio.",
-            "sources": []
+            "relevant_chunks": []
         }
     answer= await generate_rag_aswer(relevant_chunks = relevant_chunks, question = query.question)
 

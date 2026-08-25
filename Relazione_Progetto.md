@@ -264,33 +264,20 @@ L'infrastruttura Keycloak è orchestrata localmente tramite il file `docker-comp
 
 L'implementazione della schermata principale del frontend Flutter costituisce il punto di ingresso dell'applicazione lato utente. Il file `main.dart` è strutturato come un unico `StatefulWidget` (`MyHomePage`) che incapsula l'intero layout della Home Page, predisposto per il collegamento con le API REST del backend.
 
-#### Sistema di Colori Globale
-
-Il design dell'applicazione è governato da due costanti cromatiche dichiarate a livello globale:
-
-| Costante | Valore | Semantica |
-|----------|--------|-----------|
-| `colorePrincipale` | `#1B1B1B` | Colore dominante — utilizzato per AppBar, Drawer header, testi, ombre e accenti primari |
-| `coloreSecondario` | `#9B111E` | Colore di accento — utilizzato per il contenitore strumenti dell'AppBar, badge categoria, indicatori di caricamento e placeholder |
-
-Il `ThemeData` globale (`MaterialApp`) configura `ColorScheme`, `AppBarTheme` e `scaffoldBackgroundColor` a partire da queste due costanti, garantendo coerenza cromatica su tutti i widget senza ricorrere a `Theme.of(context)` nei singoli componenti.
-
 #### Layout dell'AppBar
 
-L'`AppBar` è configurata con `elevation: 6` e `shadowColor: Colors.black54` per creare un distacco visivo netto rispetto al body sottostante. L'organizzazione orizzontale della barra prevede:
+L'`AppBar` è organizzata orizzontalmente con quattro elementi funzionali, ordinati da sinistra a destra:
 
 | Posizione | Widget | Funzionalità |
 |-----------|--------|--------------|
-| Sinistra | `Text` (titolo) | Identità dell'applicazione ("NewsArchive"), font bold 22px, colore bianco |
-| Centro | `Container` con sfondo `coloreSecondario` e `BorderRadius.circular(28)` | Contenitore unico "pill-shaped" che raggruppa i tre strumenti operativi, separati internamente da divisori verticali sottili |
-| Centro — elemento 1 | `DropdownButton<String>` | Filtro per categoria tematica (Tutte, Politica, Economia, Tecnologia, Sport, Cultura, Scienza) con refresh automatico della griglia al cambio selezione |
-| Centro — elemento 2 | `TextField` (Expanded) | Barra di ricerca testuale con bordi arrotondati, sfondo semi-trasparente, icona clear dinamica e `onSubmitted` predisposto per invocare gli endpoint di ricerca |
-| Centro — elemento 3 | `Switch` + label testuale | Toggle per alternare modalità di ricerca RAG (`POST /search/rag`) e Normale (`POST /search/generic`); la label testuale ("RAG"/"Normal") è posizionata a destra dello switch |
-| Estrema destra | `IconButton` (hamburger menu) | Apre il `endDrawer` laterale |
+| Sinistra | `Text` (titolo) | Identità dell'applicazione ("NewsArchive") |
+| Centro-sinistra | `DropdownButton<String>` | Filtro per categoria tematica (Politica, Economia, Tecnologia, ecc.) con refresh automatico della lista al cambio selezione |
+| Centro-destra | `TextField` con `OutlineInputBorder` circolare | Barra di ricerca testuale con `onSubmitted` predisposto per invocare gli endpoint di ricerca |
+| Destra | `Switch` + `IconButton` (menu) | Toggle per alternare modalità di ricerca RAG (`POST /search/rag`) e Normale (`POST /search/generic`); icona hamburger per aprire il Drawer laterale |
 
 #### Drawer di Navigazione (endDrawer)
 
-Il `Drawer`, posizionato a destra (`endDrawer`) e attivato dall'icona hamburger nell'AppBar, presenta un `DrawerHeader` con sfondo `colorePrincipale`, icona giornale in `coloreSecondario` e titolo in bianco. Le azioni di navigazione esposte tramite `ListTile` (con icone in `colorePrincipale`) sono:
+Il `Drawer`, posizionato a destra (`endDrawer`) e attivato dall'icona hamburger nell'AppBar, espone le seguenti azioni di navigazione tramite `ListTile`:
 
 - **Log-in**: Predisposto per la navigazione verso il flusso di autenticazione Keycloak (OAuth2.0/OIDC).
 - **Cronologia articoli**: Accesso alla lista degli articoli visualizzati di recente.
@@ -313,7 +300,8 @@ Ogni articolo è rappresentato da una `Card` con sfondo bianco, `elevation: 3`, 
 
 - **Parte superiore** (flex: 3): Immagine di copertina (`cover_url`) caricata via `Image.network` con `BoxFit.cover`. In assenza di immagine, un placeholder mostra un'icona contestuale alla categoria (es. bilancia per Politica, pallone per Sport) in `coloreSecondario`.
 - **Parte inferiore** (flex: 2): Badge di categoria con sfondo `coloreSecondario` trasparente, titolo dell'articolo in `colorePrincipale` (massimo 2 righe, `TextOverflow.ellipsis`) e nome dell'autore con icona persona.
-
+#### Implementazione UI di Autenticazione Animata (Custom Login)
+Per garantire un'esperienza utente (UX) fluida e coerente con il design system dell'applicazione, si è scelto di non reindirizzare l'utente alle pagine web predefinite del server Keycloak. È stata invece progettata e implementata un'interfaccia di Login e Registrazione custom, animata nativamente in Flutter (sfruttando i widget Stack, AnimatedPositioned e Transform). Il frontend raccoglie in modo sicuro le credenziali dell'utente e sfrutta il flusso Direct Access Grants (Resource Owner Password Credentials) di OAuth2, comunicando tramite API REST con l'Identity Provider per l'emissione del token JWT. Questa scelta architettonica maschera all'utente la complessità del sistema IAM (Identity and Access Management) sottostante, mantenendolo all'interno dell'ambiente cloud-native senza interruzioni di navigazione.
 ## 5. Trasparenza IA e Metodologia di Sviluppo
 
 Il progetto è stato condotto secondo una metodologia "Review-driven development", prevedendo un'interazione iterativa con agenti basati su intelligenza artificiale generativa per la definizione architetturale e la generazione del codice sorgente.
@@ -345,7 +333,7 @@ Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il
 | Implementazione Keycloak e Autenticazione | Gemini 1.5 Pro | "Ragiona come un web Security expert professionista e implementa i servizi di keycloack inoltre effettua una core rewie sull'aggiunta dell'upload dei file con immagini" | Code review funzionale per l'integrazione dell'upload delle copertine (`cover_url`) su Blob Storage e fix dei deadlock asincroni. Check architetturale di Keycloak come Identity Provider su infrastruttura Azure, abbandonando l'approccio Custom JWT per rispettare la best practice "Don't roll your own crypto" aggirando i limiti della sottoscrizione studentesca e implementazione delle funzioni get_current_user e get_keycloak_public_key nel file keycloak_service.py . |
 | Generazione e Refinement UI Home Page Flutter (Task 4.1) | Claude Opus 4.6 | \"Agisci come Senior Flutter Developer. Implementa la UI della Home Page in `main.dart` seguendo il wireframe: AppBar con titolo, dropdown filtri, barra di ricerca e switch RAG/Normal; Drawer laterale destro con Login, Cronologia, Upload e Info; body con Infinite Scroll su GridView.builder di Card (cover_url, titolo, autore). Definisci `colorePrincipale` e `coloreSecondario` globali, raggruppa i controlli dell'AppBar in un Container unico con sfondo secondario e bordi arrotondati, applica elevation all'AppBar.\" | Implementazione iterativa del file `main.dart`: (1) generazione iniziale della struttura completa (AppBar, endDrawer, GridView.builder con Infinite Scroll e Card); (2) refactoring AppBar: controlli centrati, barra di ricerca allargata; (3) introduzione sistema colori globale (`colorePrincipale = #1B1B1B`, `coloreSecondario = #9B111E`) con `ThemeData` configurato, `AppBar` con `elevation: 6`, controlli raggruppati in `Container` pill-shaped con sfondo `coloreSecondario` e separatori verticali, label switch posizionata a destra; (4) estensione coerenza cromatica a tutto il body (Card, Drawer, loading indicators, empty state, placeholder). Dati mock predisposti per sostituzione con chiamate HTTP a `GET /articles` e `POST /search/rag`. |
 
-
+| Implementazione UI Login Animata (Frontend) | Gemini 1.5 Pro | \"Ho trovato sul web una schermata di login animata. Riusciresti ad adattarla al mio codice Flutter per non usare la schermata preimpostata di Keycloak che risulta scarna?\" | Trasposizione di un'animazione complessa basata su offset (HTML/CSS) in widget Flutter nativi. Adattamento dell'interfaccia al design system custom e risoluzione dei bug di overlay (z-index) nei field di testo. Preparazione del form per l'integrazione API Direct Access Grants verso Keycloak. |
 
 ## 6. Conclusioni e Sviluppi Futuri
 *(Da completare a fine progetto)*

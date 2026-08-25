@@ -1,4 +1,4 @@
-from azure.core.exceptions import ResourceExistsError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 from app.azure_clients import blob_service_client
 from app.config import settings
@@ -40,4 +40,28 @@ async def upload_cover(article_id :str, cover_image: UploadFile | None) -> str:
         raise HTTPException(
             status_code=500,
             detail=f"Errore durante il caricamento della copertina: {str(e)}"
+        )
+
+
+async def download_file(article_id:str) -> str:
+    try:
+        container_client = blob_service_client.get_container_client(settings.AZURE_STORAGE_CONTAINER_NAME)
+        blob_client = container_client.get_blob_client(article_id)
+        try:
+            downloader = await blob_client.download_blob()
+        except ResourceNotFoundError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"File '{article_id}' non trovato su Azure Blob."
+            )
+
+        file_bytes = await downloader.readall()
+        return file_bytes
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Errore durante il download da Azure Blob: {str(e)}"
         )

@@ -64,8 +64,8 @@ def search_by_keywords(keywords: str) -> list[dict]:
             FROM c 
             WHERE CONTAINS(c.manual.title, @keywords, true)
             OR CONTAINS(c.manual.description, @keywords, true)
-            OR CONTAINS(c.manual.category, @keywords, true)
             OR CONTAINS(c.manual.author, @keywords, true)
+            OR EXISTS(SELECT VALUE cat FROM cat IN c.manual.category WHERE CONTAINS(cat, @keywords, true))
             OR EXISTS(SELECT VALUE t FROM t IN c.manual.tags WHERE CONTAINS(t, @keywords, true)) """
 
 
@@ -96,7 +96,7 @@ def get_articles_list(decreasing: bool = False, category: str = None, skip: int 
     parameters = []
 
     if category:
-        query += " WHERE c.manual.category = @category"
+        query += " WHERE ARRAY_CONTAINS(c.manual.category, @category)"
         parameters.append({"name": "@category", "value": category})
 
     if decreasing:
@@ -125,8 +125,10 @@ def get_article_by_id(article_id: str) -> dict:
     except CosmosHttpResponseError as e:
         print(f"Errore recupero metadatione: {e}")
         return {}
+
 def get_chunks_by_article_id(article_id: str) -> list[dict]:
     '''Recupera tutti i frammenti di un articolo dato il suo ID'''
+
     query = "SELECT c.chunk_index, c.text FROM c WHERE c.article_id = @article_id ORDER BY c.chunk_index ASC"
     parameters = [{"name": "@article_id", "value": article_id}]
     try:

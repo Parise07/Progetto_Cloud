@@ -17,9 +17,9 @@ async def upload_file(
         cover_image: UploadFile = File(None, description="Immagine di copertina"),
         title: str = Form(None),
         author: str = Form(None),
-        category: str = Form(None),
+        category: list[str] = Form(None),
         description: str = Form(None),
-        tags: str = Form(None),
+        tags: list[str] = Form(None),
         current_user: dict = Depends(get_current_user)):
 
 
@@ -125,3 +125,11 @@ async def get_article_details(article_id: str ):
         "article": article,
         "chunks": article_chunks
     }
+
+@router.get("/articles/{article_id}/download", summary="Download articolo ")
+async def download_article(article_id: str):
+    await download_article(article_id)
+    return{
+        "status": "success",
+    }
+

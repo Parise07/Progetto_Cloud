@@ -7,7 +7,7 @@ class ManualMetadata(BaseModel):
     """Metadati inseriti manualmente dall'utente al momento dell'upload."""
     title: Optional[str] = Field(None, description="Titolo dell'articolo")
     author: Optional[str] = Field(None, description="Autore o fonte dell'articolo")
-    category: Optional[str] = Field(None, description="Categoria tematica (es. Politica, Sport)")
+    category: Optional[List[str]] = Field(None, description="Categoria tematica (es. Politica, Sport)")
     description: Optional[str] = Field(None, description="Breve descrizione manuale")
     tags: Optional[List[str]] = Field(default_factory=list, description="Lista di tag liberi")
 
