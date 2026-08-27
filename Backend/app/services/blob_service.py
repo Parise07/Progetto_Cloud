@@ -43,21 +43,22 @@ async def upload_cover(article_id :str, cover_image: UploadFile | None) -> str:
         )
 
 
-async def download_file(article_id:str) -> str:
+async def download_file(filename :str, container_name: str = settings.AZURE_STORAGE_CONTAINER_NAME) -> tuple[bytes, str]:
     try:
-        container_client = blob_service_client.get_container_client(settings.AZURE_STORAGE_CONTAINER_NAME)
-        blob_client = container_client.get_blob_client(article_id)
+        container_client = blob_service_client.get_container_client(container_name)
+        blob_client = container_client.get_blob_client(filename)
         try:
             downloader = await blob_client.download_blob()
         except ResourceNotFoundError:
             raise HTTPException(
                 status_code=404,
-                detail=f"File '{article_id}' non trovato su Azure Blob."
+                detail=f"File '{filename}' non trovato su Azure Blob."
             )
 
         file_bytes = await downloader.readall()
-        return file_bytes
-
+        properties = await blob_client.get_blob_properties()
+        content_type = properties.content_settings.content_type or "application/octet-stream"
+        return file_bytes, content_type
     except HTTPException:
         raise
     except Exception as e:

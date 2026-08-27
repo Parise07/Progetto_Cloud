@@ -1,4 +1,8 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import '../api_config.dart';
+import '../shared_preferences.dart';
 
 // --- COLORI DESIGN SYSTEM 60-30-10 ---
 const Color coloreSfondo = Color(0xFFF4F6F8);
@@ -19,19 +23,18 @@ class _UploadScreenState extends State<UploadScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
   final TextEditingController _customCategoryController = TextEditingController();
-
-
   final List<String> _selectedCategories = [];
   final List<String> _selectedTags = [];
 
-
   final List<String> _defaultCategories = ['Politica', 'Economia', 'Tecnologia', 'Sport', 'Cultura', 'Scienza'];
-  bool _isCustomCategory = false; // Flag per mostrare il campo "Altro..."
+  bool _isCustomCategory = false;
 
 
   String? _documentFileName;
   String? _coverFileName;
 
+  PlatformFile? _documentFile;
+  PlatformFile? _coverFile;
   @override
   void dispose() {
     _titleController.dispose();
@@ -149,14 +152,37 @@ class _UploadScreenState extends State<UploadScreen> {
             icon: Icons.description,
             title: "Documento (.txt, .pdf, .docx)",
             fileName: _documentFileName,
-            onTap: () => setState(() => _documentFileName = "articolo_scienza.pdf"), // Mock
+            onTap: () async {
+              FilePickerResult? result = await FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: ['txt', 'pdf', 'docx'],
+                withData: true, // <-- FONDAMENTALE PER IL WEB: carica i bytes in memoria
+              );
+              if (result != null) {
+                setState(() {
+                  _documentFile = result.files.first;
+                  _documentFileName = _documentFile!.name;
+                });
+              }
+            },
           ),
           const Padding(padding: EdgeInsets.symmetric(vertical: 12.0), child: Divider()),
           _buildFilePickerRow(
             icon: Icons.image,
             title: "Copertina (.png, .jpg) - Opzionale",
             fileName: _coverFileName,
-            onTap: () => setState(() => _coverFileName = "cover_img.jpg"), // Mock
+            onTap: () async {
+              FilePickerResult? result = await FilePicker.platform.pickFiles(
+                type: FileType.image,
+                withData: true,
+              );
+              if (result != null) {
+                setState(() {
+                  _coverFile = result.files.first;
+                  _coverFileName = _coverFile!.name;
+                });
+              }
+            },
           ),
         ],
       ),
@@ -222,7 +248,6 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  // --- GESTIONE CATEGORIE MULTIPLE E CUSTOM ---
   Widget _buildCategoryMultiSelect() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,7 +328,6 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
-  // --- GESTIONE TAGS MULTIPLI ---
   Widget _buildTagsInput() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -354,11 +378,74 @@ class _UploadScreenState extends State<UploadScreen> {
         width: 250, // Dimensione fissa centrale e molto più elegante
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: () {
-            debugPrint("--- ESECUZIONE UPLOAD ---");
-            debugPrint("File: $_documentFileName");
-            debugPrint("Categorie (List): $_selectedCategories");
-            debugPrint("Tags (List): $_selectedTags");
+          onPressed: () async {
+            if (_documentFile == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Il documento è obbligatorio!')),
+              );
+              return;
+            }
+
+            // Mostriamo un caricamento base
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Caricamento in corso...')),
+            );
+
+            try {
+              var uri = Uri.parse('${ApiConfig.baseUrl}/articles/upload');
+              var request = http.MultipartRequest('POST', uri);
+
+              String? token = SharedPreferenceManager.instance.getString('access');
+              if (token != null) {
+                request.headers['Authorization'] = 'Bearer $token';
+              }
+
+              request.fields['title'] = _titleController.text;
+              request.fields['author'] = _authorController.text;
+              request.fields['description'] = _descriptionController.text;
+
+
+              for (String cat in _selectedCategories) {
+                request.files.add(http.MultipartFile.fromString('category', cat));
+              }
+
+              for (String tag in _selectedTags) {
+                request.files.add(http.MultipartFile.fromString('tags', tag));
+              }
+
+
+              if (_documentFile != null && _documentFile!.bytes != null) {
+                request.files.add(http.MultipartFile.fromBytes(
+                  'file',
+                  _documentFile!.bytes!,
+                  filename: _documentFile!.name,
+                ));
+              }
+
+              if (_coverFile != null && _coverFile!.bytes != null) {
+                request.files.add(http.MultipartFile.fromBytes(
+                  'cover_image',
+                  _coverFile!.bytes!,
+                  filename: _coverFile!.name,
+                ));
+              }
+
+              var streamedResponse = await request.send();
+              var response = await http.Response.fromStream(streamedResponse);
+
+              if (response.statusCode == 201) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Articolo caricato con successo!'), backgroundColor: Colors.green),
+                );
+              } else {
+                debugPrint("Errore: ${response.body}");
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Errore durante il caricamento: ${response.statusCode}'), backgroundColor: Colors.red),
+                );
+              }
+            } catch (e) {
+              debugPrint("Eccezione durante l'upload: $e");
+            }
           },
           icon: const Icon(Icons.cloud_upload, color: Colors.white, size: 24),
           label: const Text(
@@ -368,7 +455,7 @@ class _UploadScreenState extends State<UploadScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: coloreAccento,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)), // Molto arrotondato
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
             elevation: 4,
             shadowColor: coloreAccento.withAlpha(100),
           ),

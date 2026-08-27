@@ -8,7 +8,6 @@ chunks_container = database.get_container_client(settings.COSMOS_CHUNKS_CONTAINE
 
 def save_chunks_metadata(article_id: str, chunks: list[str]):
     try:
-        # Usiamo enumerate per avere sia l'indice (0, 1, 2...) che il testo del chunk
         for index, text in enumerate(chunks):
             chunk_document = {
                 "id": f"{article_id}-chunk-{index}",  # ID univoco del chunk
@@ -140,4 +139,33 @@ def get_chunks_by_article_id(article_id: str) -> list[dict]:
         return list(results)
     except CosmosHttpResponseError as e:
         print(f"Errore recupero metadatione: {e}")
+        return []
+
+def get_article_by_user(user_id: str, keyword: str = None) -> list[dict]:
+    ''' ricevuto uno lo user ID recupera tutti gli articoli collegati ad esso
+     se richiesto filtra anche il risulta tramite keywords per una modifica più rapida'''
+    query = """
+        SELECT c.id, c.manual.title, c.manual.author, 
+               c.manual.category, c.blob_url, c.cover_url, c.uploaded_at
+        FROM c 
+        WHERE c.user_id = @user_id
+    """
+    parameters = [{"name": "@user_id", "value": user_id}]
+    if keyword and keyword.strip():
+        query += """ AND (
+                CONTAINS(c.manual.title, @keyword, true) 
+                OR CONTAINS(c.manual.description, @keyword, true)
+            )"""
+        parameters.append({"name": "@keyword", "value": keyword.strip()})
+
+    query += " ORDER BY c.uploaded_at DESC"
+    try:
+        results = articles_container.query_items(
+            query=query,
+            parameters=parameters,
+            enable_cross_partition_query=True
+        )
+        return list(results)
+    except CosmosHttpResponseError as e:
+        print(f"Errore recupero articoli: {e}")
         return []

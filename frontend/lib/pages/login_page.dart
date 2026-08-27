@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/main.dart';
+import '../api_config.dart';
 import '../shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -35,11 +36,13 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> checkLoginStatus() async{
     String? accessToken = SharedPreferenceManager.instance.getString('access');
     if(accessToken != null){
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const MyApp()),
-      );
-      _buildToggleText("Non hai un account? ", "Registrati", () => setState(() => _isLogin = false)); // altrimenti si registra e viene spostato nell'altra schermata
+      // Stessa magia: aspettiamo il frame!
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MyApp()),
+        );
+      });
     }
   }
 
@@ -65,7 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       try {
         final responseLogin = await http.post(
-          Uri.parse('http://localhost:8000/utente/login'), // L'URL della tua nuova rotta!
+          Uri.parse('${ApiConfig.baseUrl}/utente/login'), // L'URL della tua nuova rotta!
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(loginData),
         );
@@ -79,11 +82,14 @@ class _LoginScreenState extends State<LoginScreen> {
           await storage.setString('access', accessToken);
           await storage.setString('refresh', refreshToken);
 
-          Navigator.push(
+          if (!mounted) return;
+
+          Navigator.pushReplacement( // Sempre meglio pushReplacement dal login
             context,
             MaterialPageRoute(builder: (context) => const MyApp()),
           );
         } else {
+          if (!mounted) return; // Protezione anche per il dialog!
           showErrorDialog('Username o password non corretta: ${responseLogin.body}');
         }
       } catch (e) {
@@ -112,7 +118,7 @@ class _LoginScreenState extends State<LoginScreen> {
       'password': passwordtext,
     };
 
-    String url = 'http://localhost:8000/utente/addUtente';
+    String url = '${ApiConfig.baseUrl}/utente/addUtente';
     try {
       final responseSignin = await http.post(
         Uri.parse(url),

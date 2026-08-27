@@ -1,9 +1,12 @@
+import os
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query,Depends
+from urllib.parse import urlparse
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query,Depends, Response
 from datetime import datetime, timezone
+from app.config import settings
 from app.models.article import ManualMetadata, ArticleDocument
-from app.services.blob_service import uploaded_file_to_blob,upload_cover
-from app.services.cosmos_service import save_article_metadata, save_chunks_metadata, get_articles_list, get_article_by_id,get_chunks_by_article_id
+from app.services.blob_service import uploaded_file_to_blob, upload_cover, download_file
+from app.services.cosmos_service import save_article_metadata, save_chunks_metadata, get_articles_list, get_article_by_id,get_chunks_by_article_id, get_article_by_user
 from app.services.ai_service import generate_ai_metadata, chunking, generate_embedding_for_chunks
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
@@ -12,6 +15,7 @@ from autentication.keycloack_service import get_current_user
 router = APIRouter()
 
 @router.post("/articles/upload", status_code=status.HTTP_201_CREATED, summary="Carica un articolo su Blob Storage")
+
 async def upload_file(
         file: UploadFile = File(...),
         cover_image: UploadFile = File(None, description="Immagine di copertina"),
@@ -21,19 +25,26 @@ async def upload_file(
         description: str = Form(None),
         tags: list[str] = Form(None),
         current_user: dict = Depends(get_current_user)):
-
-
+    '''Riceve un: file, immagine di copertina e i metadati manuali e provvede a generare I metadati attraverso
+    L'uso dell'IA e a salvare il file all'interno del blob storage e i metadati all'interno di cosmos.
+    Prima che il file e gli altri dati vengano caricati il sistema effettua un check multiplo.
+    1° sull'esistenza di un titolo uguale
+    2° su una similarità elevata con un altro file
+    3° se l'utente è loggato con  current_user: dict = Depends(get_current_user) '''
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="nessun file fornito")
 
-    # 1. Genero un id univoco per distinguere gli articoli
+    if check_title_exists(title):
+        raise HTTPException(status_code=400, detail="titolo già esistente inserirne uno diverso ")
+
+    # id univoco per ogni articolo
     article_id = str(uuid.uuid4())
     extension = file.filename.split(".")[-1].lower() if "." in file.filename else "txt"
     blob_filename = f"{article_id}.{extension}"
 
-    if check_title_exists(title):
-        raise HTTPException(status_code=400, detail="titolo già esistente inserirne uno diverso ")
+    #estrapolo id dell'utente dal token
+    user_id= current_user.get("sub")
 
     # 2. Leggo il file e parser
     file_bytes = await file.read()
@@ -44,9 +55,8 @@ async def upload_file(
     vector_embedding = await generate_embedding_for_chunks([vector])
     extract_vector= vector_embedding[0]
 
-    # 3 bis controllo similarità
+    # 2° controllo di similarità fatto così in basso per poter effettuare il chuncking una sola volta
     if await check_similarity(extract_vector):
-
         raise HTTPException(status_code=400, detail=" Documento molto simile a uno già esistente")
 
 
@@ -56,12 +66,13 @@ async def upload_file(
 
 
     # 5. Formatto i tag
-    tag_list = [tag.strip() for tag in tags.split(",")] if tags else []
+    tag_list = [tag.strip() for tag in tags] if tags else []
+    cat_list = [cat.strip() for cat in category] if category else []
 
     manual_meta = ManualMetadata(
         title=title,
         author=author,
-        category=category,
+        category=cat_list,
         description=description,
         tags=tag_list
     )
@@ -70,6 +81,7 @@ async def upload_file(
     # 6. Creo il JSON da caricare in cosmos
     article_doc = ArticleDocument(
         id = article_id,
+        user_id= user_id,
         blob_url=blob_url,
         cover_url = cover_url,
         uploaded_at = datetime.now(timezone.utc).isoformat(),
@@ -79,15 +91,16 @@ async def upload_file(
     )
 
 
-   # 7. Salvo su Cosmos e chunking
+   # Salvataggio su cosmos nella raccolta articles
     chunks = chunking(parser_file)
     save_article_metadata(article_doc.model_dump(mode='json'))
 
+    # salvo i chunck nella raccolta chunks
     save_chunks_metadata(article_id=article_id, chunks=chunks)
-    #8 embedding
+
+
     embeddings =generate_embedding_for_chunks(chunks)
 
-    # 9 AI Search
     await index_chunk_to_ai_search(article_id=article_id , chunks=chunks, embedding=embeddings)
 
     return {
@@ -113,6 +126,18 @@ async def list_articles(
         "skip": skip,
         "limit": limit
     }
+@router.get("/articles/me", summary="Recupera gli articoli dell'utente loggato ")
+async def get_articles_by_user_id(keyword: str = Query(None, description="Parola chiave per la ricerca nella cronologia"),current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Username non esistente")
+    articles = get_article_by_user(user_id=user_id, keyword=keyword )
+    return {
+        "status": "success",
+        "returned_items": len(articles),
+        "articles": articles
+    }
+
 @router.get("/articles/{article_id}", summary="Scheda Articolo")
 async def get_article_details(article_id: str ):
     article = get_article_by_id(article_id)
@@ -128,8 +153,34 @@ async def get_article_details(article_id: str ):
 
 @router.get("/articles/{article_id}/download", summary="Download articolo ")
 async def download_article(article_id: str):
-    await download_article(article_id)
-    return{
-        "status": "success",
-    }
+    article = get_article_by_id(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Articolo non esistente")
+    blob_url = article.get("blob_url") if isinstance(article, dict) else article.blob_url
+    if not blob_url:
+        raise HTTPException(status_code=404, detail="Nessun file associato a questo articolo")
+    blob_filename = os.path.basename(urlparse(blob_url).path)
+
+    file_bytes, content_type = await download_file(blob_filename)
+
+    return Response(
+        content=file_bytes,
+        media_type=content_type,
+        headers={"Content-Disposition": f'attachment; filename="{blob_filename}"'}
+    )
+
+
+
+@router.get("/articles/{article_id}/cover", summary="Recupera l'immagine di copertina")
+async def get_cover_image(article_id: str):
+    article = get_article_by_id(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Articolo non trovato")
+    cover_url = article.get("cover_url") if isinstance(article, dict) else article.cover_url
+    if not cover_url or "placeholder" in cover_url:
+        raise HTTPException(status_code=404, detail="Copertina non presente")
+    filename = os.path.basename(urlparse(cover_url).path)
+    file_bytes, content_type = await download_file(filename, settings.AZURE_STORAGE_IMAGE_CONTAINER)
+    return Response(content=file_bytes, media_type=content_type)
+
 

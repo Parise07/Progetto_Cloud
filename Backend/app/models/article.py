@@ -22,7 +22,9 @@ class MetadataIA(BaseModel):
 
 
 class ArticleDocument(BaseModel):
+    ''' Modello che unisce le varie caratteristiche di un articolo '''
     id: str = Field(..., description="UUID univoco dell'articolo (partition key)")
+    user_id: str = Field(..., description="UUID univoco dell'articolo")
     cover_url: Optional[str] = Field(None, description="URL immagine dell'articolo")
     blob_url: str = Field(..., description="URL del file grezzo su Azure Blob Storage")
     uploaded_at: datetime = Field(..., description="Timestamp ISO 8601 del caricamento")

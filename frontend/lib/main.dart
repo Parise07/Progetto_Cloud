@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/cronologia_page.dart';
 import 'package:frontend/pages/upload_page.dart';
 import 'package:frontend/shared_preferences.dart';
 import 'package:frontend/utils.dart';
 
+import 'api_config.dart';
 import 'pages/detail_page.dart';
 import 'pages/info_page.dart';
 import 'pages/login_page.dart';
@@ -140,7 +142,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _isLoading = true;
     });
     try {
-      String url = 'http://localhost:8000/articles?skip=$_skip&limit=$_limit';
+      String url = '${ApiConfig.baseUrl}/articles?skip=$_skip&limit=$_limit';
       if (_selectedCategory != 'Tutte') {
         url += '&category=$_selectedCategory';
       }
@@ -189,8 +191,8 @@ class _MyHomePageState extends State<MyHomePage> {
       _articles.clear();
     });
     String url = _isRagMode
-        ? 'http://localhost:8000/search/rag'
-        : 'http://localhost:8000/search/generic';
+        ? '${ApiConfig.baseUrl}/search/rag'
+        : '${ApiConfig.baseUrl}/search/generic';
 
     try{
         final Map<String, dynamic> requestBody = _isRagMode
@@ -453,7 +455,7 @@ class _MyHomePageState extends State<MyHomePage> {
             _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+                MaterialPageRoute(builder: (context) => const CronologiaScreen()),
               );
             },),
             _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
@@ -517,8 +519,8 @@ class _MyHomePageState extends State<MyHomePage> {
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       onTap: () {
-        Navigator.pop(context); // Chiude il drawer prima di navigare
-        onTapAction(); // Esegue l'azione di navigazione
+        Navigator.pop(context);
+        onTapAction();
       },
     );
   }
@@ -561,9 +563,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: Container(
                   width: double.infinity,
                   color: coloreSfondo, // Sfondo per il placeholder
-                  child: coverUrl.isNotEmpty
+                  child: coverUrl.isNotEmpty && !coverUrl.contains('placeholder')
                       ? Image.network(
-                    coverUrl,
+                    '${ApiConfig.baseUrl}/articles/${article.id}/cover',
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => _buildPlaceholderImage(category.isNotEmpty ? category.first : ''),
                   )

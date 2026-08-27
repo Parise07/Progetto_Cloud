@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'dart:html' as html;
+import '../api_config.dart';
 import '../shared_preferences.dart';
 import "package:pdf/widgets.dart" as pw;
 import 'package:pdf/pdf.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../utils.dart';
 
 
 
@@ -26,26 +29,9 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   // Stato per l'apertura/chiusura della chat IA laterale
   bool _isChatOpen = false;
   bool _isLogin = false;
+  bool _isLoading = true;
 
-  // --- DATI MOCK ---
-  final Map<String, dynamic> _mockArticle = {
-    'title': 'Le nuove frontiere dell\'Intelligenza Artificiale nel 2026',
-    'cover_url': 'https://picsum.photos/800/400',
-    'manual': {
-      'author': 'Antonio Parise',
-      'category': 'Tecnologia',
-      'description': 'Un\'analisi approfondita sui nuovi modelli generativi multimodali.',
-      'tags': ['AI', 'Cloud', 'Innovazione']
-    },
-    'ia_metadata': {
-      'subtitle': 'Come i modelli LLM stanno ridefinendo il Cloud Computing',
-      'summary': 'L\'articolo esplora l\'integrazione nativa dell\'IA nei sistemi cloud-native, evidenziando miglioramenti in efficienza e sicurezza.',
-      'keywords': ['LLM', 'Cloud-Native', 'Integrazione', 'Sicurezza'],
-      'language': 'it',
-      'entities': ['Organizzazione: OpenAI', 'Tecnologia: Azure', 'Concetto: RAG']
-    }
-  };
-
+  Articolo? _article;
   Future<void> _checkLoginStatus() async{
     String? accessToken = SharedPreferenceManager.instance.getString('access');
     setState(() {
@@ -53,12 +39,76 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     });
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadArticle();
+  }
 
+Future<void> _loadArticle() async {
+      setState(() {
+        _isLoading = true;
+      });
+      try {
+        final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/articles/${widget.articleId}'),
+        );
+        if (response.statusCode != 200) {
+          throw Exception('Errore ${response.statusCode} nel recupero articolo');
+        }
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        // L'endpoint GET /articles/{id} restituisce { status, article, chunks }
+        final Map<String, dynamic>? articleJson = data['article'];
+        if (articleJson == null) {
+          throw Exception('Articolo non trovato nella risposta');
+        }
+
+        final articolo = Articolo.fromJson(articleJson);
+        if (!mounted) return;
+        setState(() {
+          _article = articolo;
+          _isLoading = false;
+        });
+      } catch (e) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+      }
+}
   @override
   Widget build(BuildContext context) {
     // Breakpoint per impilare Immagine e Metadati Manuali su schermi piccoli
     bool isWideScreen = MediaQuery.of(context).size.width > 900;
-
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: coloreSfondo,
+        body: Center(child: CircularProgressIndicator(color: colorePrincipale)),
+      );
+    }
+    if ( _article == null) {
+      return Scaffold(
+        backgroundColor: coloreSfondo,
+        appBar: AppBar(
+          backgroundColor: colorePrincipale,
+          foregroundColor: Colors.white,
+          title: const Text('Dettaglio Articolo'),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Articolo non trovato", textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                ElevatedButton(onPressed: _loadArticle, child: const Text("Riprova")),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: coloreSfondo,
       appBar: AppBar(
@@ -92,7 +142,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
               children: [
                 // TITOLO
                 Text(
-                  _mockArticle['title'],
+                  _article!.title,
                   style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: colorePrincipale, height: 1.2),
                 ),
                 const SizedBox(height: 32),
@@ -133,7 +183,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                   spacing: 24, // Spazio orizzontale
                   runSpacing: 16, // Spazio verticale se lo schermo è troppo stretto
                   children: [
-                    _buildActionBtn(Icons.download, "Scarica Documento", () {}, isPrimary: true),
+                    _buildActionBtn(Icons.download, "Scarica Documento", () => _scaricaDocumento(), isPrimary: true),
                     _buildActionBtn(Icons.data_object, "Scarica Metadati (JSON)", () => _scaricaFileJson(), isPrimary: false),
                   ],
                 ),
@@ -171,19 +221,28 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
 
   Widget _buildCoverImage() {
+    final coverUrl = _article!.coverUrl;
+    final hasValidCover = coverUrl.isNotEmpty && !coverUrl.contains('placeholder');
+
     return Container(
       width: double.infinity,
       height: 350,
       decoration: BoxDecoration(
+        color: colorePrincipale.withAlpha(20),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(color: colorePrincipale.withAlpha(30), blurRadius: 20, offset: const Offset(0, 10)),
         ],
-        image: DecorationImage(
-          image: NetworkImage(_mockArticle['cover_url']),
+        image: hasValidCover
+            ? DecorationImage(
+          image: NetworkImage('${ApiConfig.baseUrl}/articles/${_article!.id}/cover'),
           fit: BoxFit.cover,
-        ),
+        )
+            : null,
       ),
+      child: !hasValidCover
+          ? const Center(child: Icon(Icons.article, size: 100, color: Colors.white70))
+          : null,
     );
   }
 
@@ -194,10 +253,10 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         _buildSectionTitle("Metadati Manuali"),
         _buildMetadataCard(
           children: [
-            _buildDetailRow("Autore", _mockArticle['manual']['author']),
-            _buildDetailRow("Categoria", _mockArticle['manual']['category']),
-            _buildDetailRow("Descrizione", _mockArticle['manual']['description']),
-            _buildTagsRow("Tags", List<String>.from(_mockArticle['manual']['tags']), colorePrincipale),
+            _buildDetailRow("Autore", _article!.author),
+            _buildTagsRow("Categoria", List<String>.from(_article!.category), colorePrincipale),
+            _buildDetailRow("Descrizione", _article!.description),
+            _buildTagsRow("Tags", List<String>.from(_article!.tags), colorePrincipale),
           ],
         ),
       ],
@@ -211,12 +270,12 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         _buildSectionTitle("Analisi IA (Azure OpenAI)"),
         _buildMetadataCard(
           children: [
-            _buildDetailRow("Sottotitolo", _mockArticle['ia_metadata']['subtitle']),
-            _buildDetailRow("Riassunto", _mockArticle['ia_metadata']['summary']),
-            _buildDetailRow("Lingua", _mockArticle['ia_metadata']['language'].toString().toUpperCase()),
-            _buildTagsRow("Parole Chiave", List<String>.from(_mockArticle['ia_metadata']['keywords']), coloreAccento),
+            _buildDetailRow("Sottotitolo", _article!.subtitle),
+            _buildDetailRow("Riassunto", _article!.summary),
+            _buildDetailRow("Lingua", _article!.language),
+            _buildTagsRow("Parole Chiave", _article!.keywords, coloreAccento),
             const SizedBox(height: 8),
-            _buildTagsRow("Entità Rilevate", List<String>.from(_mockArticle['ia_metadata']['entities']), Colors.indigo),
+            _buildTagsRow("Entità Rilevate", _article!.entities, Colors.indigo),
           ],
         ),
       ],
@@ -441,148 +500,108 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   Future<void> _scaricaFileJson() async {
+    final article = _article;
+    if (article == null) return;
     try {
       final pdf = pw.Document();
-
-      // Carichiamo l'immagine di sfondo dagli asset locali usando rootBundle
-      final imageBytes = await rootBundle.load('assets/images/Sfondo_indicazioni.jpeg');
-      final image = pw.MemoryImage(imageBytes.buffer.asUint8List());
-
-      // Definiamo i font standard inclusi nel PDF per un aspetto Serif classico
       final tFont = pw.Font.times();
       final tBold = pw.Font.timesBold();
       final tItalic = pw.Font.timesItalic();
 
-      pdf.addPage(
-        pw.Page(
-          pageFormat: const PdfPageFormat(600, 1000, marginAll: 0),
-          build: (pw.Context contextPdf) {
-            return pw.Stack(
-              children: [
-                // Inseriamo lo sfondo decorato per coprire l'intera pagina del PDF
-                pw.Positioned.fill(
-                  child: pw.Image(image, fit: pw.BoxFit.fill),
+      //scarichiamo l'immagine della copertina
+
+      pw.MemoryImage? coverImage;
+      if (article.coverUrl.isNotEmpty) {
+        try {
+          final response = await http.get(Uri.parse(article.coverUrl));
+          if (response.statusCode == 200) {
+            coverImage = pw.MemoryImage(response.bodyBytes);
+          }
+        } catch (_) {
+          coverImage = null;
+        }
+      }
+      pw.Widget buildRow(String label, String value) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.SizedBox(
+                width: 110,
+                child: pw.Text(label, style: pw.TextStyle(font: tBold, fontSize: 12)),
+              ),
+              pw.Expanded(
+                child: pw.Text(
+                  value.isNotEmpty ? value : "-",
+                  style: pw.TextStyle(font: tFont, fontSize: 12),
                 ),
-                // Contenuto testuale allineato e bloccato dentro la cornice
-                pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 55),
-                  child: pw.Column(
-                    children: [
-                      pw.SizedBox(height: 220), // Spazio per scendere sotto i ricami in alto
-                      pw.Text(
-                        "PROMEMORIA LAUREA",
-                        style: pw.TextStyle(
-                          font: tBold,
-                          fontSize: 32,
-                          color: PdfColor.fromHex('#3C0202'),
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.Text(
-                        "DI IRENE 🎓",
-                        style: pw.TextStyle(
-                          font: tBold,
-                          fontSize: 32,
-                          color: PdfColor.fromHex('#3C0202'),
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.Spacer(flex: 1),
-                      pw.Text(
-                        "Ciao $nome,",
-                        style: pw.TextStyle(
-                          font: tItalic,
-                          fontSize: 22,
-                          color: PdfColor.fromHex('#3C0202'),
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.Text(
-                        "questo è il tuo promemoria per l'evento!",
-                        style: pw.TextStyle(
-                          font: tItalic,
-                          fontSize: 22,
-                          color: PdfColor.fromHex('#3C0202'),
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.SizedBox(height: 20),
-                      pw.Container(
-                        width: 320,
-                        height: 1.5,
-                        color: PdfColor.fromHex('#3C0202'),
-                      ),
-                      pw.Spacer(flex: 1),
-                      // Blocco dei dati logistici centrato orizzontalmente ma allineato a sinistra internamente
-                      pw.Align(
-                        alignment: pw.Alignment.center,
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          mainAxisSize: pw.MainAxisSize.min,
-                          children: [
-                            pw.Text(
-                              "📅 Data: [Inserisci la tua Data]",
-                              style: pw.TextStyle(
-                                font: tBold,
-                                fontSize: 18,
-                                color: PdfColor.fromHex('#3C0202'),
-                              ),
-                            ),
-                            pw.SizedBox(height: 15),
-                            pw.Text(
-                              "🕒 Ora: [Inserisci il tuo Orario]",
-                              style: pw.TextStyle(
-                                font: tBold,
-                                fontSize: 18,
-                                color: PdfColor.fromHex('#3C0202'),
-                              ),
-                            ),
-                            pw.SizedBox(height: 15),
-                            pw.Row(
-                              mainAxisSize: pw.MainAxisSize.min,
-                              children: [
-                                pw.Text(
-                                  "📍 Luogo: ",
-                                  style: pw.TextStyle(
-                                    font: tBold,
-                                    fontSize: 18,
-                                    color: PdfColor.fromHex('#3C0202'),
-                                  ),
-                                ),
-                                // LINK INTERATTIVO E CLICCABILE DENTRO IL PDF SCARICATO!
-                                pw.UrlLink(
-                                  destination: "https://maps.app.goo.gl/CGdiNsgpwh5dGUgRA",
-                                  child: pw.Text(
-                                    "Apri Mappa 🗺️",
-                                    style: pw.TextStyle(
-                                      font: tBold,
-                                      fontSize: 18,
-                                      color: PdfColors.blue800,
-                                      decoration: pw.TextDecoration.underline,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      pw.Spacer(flex: 2),
-                      pw.Text(
-                        "Non vedo l'ora di festeggiare insieme! 🥂",
-                        style: pw.TextStyle(
-                          font: tItalic,
-                          fontSize: 20,
-                          color: PdfColor.fromHex('#3C0202'),
-                        ),
-                        textAlign: pw.TextAlign.center,
-                      ),
-                      pw.SizedBox(height: 220), // Spazio inferiore per non coprire i fiori
-                    ],
+              ),
+            ],
+          ),
+        );
+      }
+
+      pw.Widget sectionTitle(String title) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 16, bottom: 8),
+          child: pw.Text(title, style: pw.TextStyle(font: tBold, fontSize: 16)),
+        );
+      }
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          header: (context) => pw.Text(
+            article.title,
+            style: pw.TextStyle(font: tItalic, fontSize: 10, color: PdfColors.grey700),
+          ),
+          footer: (context) => pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Pagina ${context.pageNumber} di ${context.pagesCount}',
+              style: pw.TextStyle(font: tFont, fontSize: 9, color: PdfColors.grey600),
+            ),
+          ),
+          build: (pw.Context contextPdf) {
+            return [
+              pw.Text(article.title, style: pw.TextStyle(font: tBold, fontSize: 24)),
+              pw.SizedBox(height: 16),
+
+              if (coverImage != null) ...[
+                pw.Center(
+                  child: pw.Container(
+                    height: 220,
+                    child: pw.Image(coverImage, fit: pw.BoxFit.cover),
                   ),
                 ),
+                pw.SizedBox(height: 16),
               ],
-            );
+
+              sectionTitle("Informazioni generali"),
+              buildRow("ID", article.id),
+              buildRow("Caricato il", article.uploadedAt),
+              buildRow("URL Blob", article.blobUrl),
+
+              sectionTitle("Metadati Manuali"),
+              buildRow("Autore", article.author),
+              buildRow("Descrizione", article.description),
+              buildRow("Categoria", article.category.join(", ")),
+              buildRow("Tags", article.tags.join(", ")),
+
+              sectionTitle("Analisi IA"),
+              buildRow("Sottotitolo", article.subtitle),
+              buildRow("Lingua", article.language),
+              buildRow("Parole chiave", article.keywords.join(", ")),
+              buildRow("Entità rilevate", article.entities.join(", ")),
+              pw.SizedBox(height: 8),
+              pw.Text("Riassunto", style: pw.TextStyle(font: tBold, fontSize: 12)),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                article.summary.isNotEmpty ? article.summary : "-",
+                style: pw.TextStyle(font: tFont, fontSize: 12),
+              ),
+            ];
           },
         ),
       );
@@ -593,15 +612,61 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
       final url = html.Url.createObjectUrlFromBlob(blob);
 
       html.AnchorElement(href: url)
-        ..setAttribute("download", "Promemoria_Laurea_Irene.pdf")
+        ..setAttribute("download", "Metadati_${article.id}.pdf")
         ..click();
 
       html.Url.revokeObjectUrl(url);
     } catch (e) {
+      if (!mounted) return;
       print("Errore nella generazione del PDF: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Impossibile generare il PDF. Verifica la posizione dell'immagine."),
+        SnackBar(
+          content: Text("Impossibile generare il PDF: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _scaricaDocumento() async {
+    final article = _article;
+    if (article == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/articles/${article.id}/download'),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Errore ${response.statusCode} durante il download');
+      }
+
+      final contentType = response.headers['content-type'] ?? 'application/octet-stream';
+
+      // Proviamo a recuperare il nome file dall'header Content-Disposition
+      // inviato dal backend; se manca, usiamo un fallback con l'id articolo.
+      String filename = 'articolo_${article.id}';
+      final disposition = response.headers['content-disposition'];
+      if (disposition != null) {
+        final match = RegExp(r'filename="?([^"]+)"?').firstMatch(disposition);
+        if (match != null && match.group(1) != null) {
+          filename = match.group(1)!;
+        }
+      }
+
+      final blob = html.Blob([response.bodyBytes], contentType);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.AnchorElement(href: url)
+        ..setAttribute("download", filename)
+        ..click();
+
+      html.Url.revokeObjectUrl(url);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Impossibile scaricare il documento: $e"),
           backgroundColor: Colors.redAccent,
         ),
       );
