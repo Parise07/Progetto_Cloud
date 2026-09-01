@@ -4,13 +4,14 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query,Depends, Response
 from datetime import datetime, timezone
 from app.config import settings
-from app.models.article import ManualMetadata, ArticleDocument
-from app.services.blob_service import uploaded_file_to_blob, upload_cover, download_file
-from app.services.cosmos_service import save_article_metadata, save_chunks_metadata, get_articles_list, get_article_by_id,get_chunks_by_article_id, get_article_by_user
+from app.models.article import ManualMetadata, ArticleDocument, ArticleUpdateModel
+from app.services.blob_service import uploaded_file_to_blob, upload_cover, download_file, delete_blob
+from app.services.cosmos_service import save_article_metadata, save_chunks_metadata, get_articles_list, \
+    get_article_by_id, get_chunks_by_article_id, get_article_by_user, delete_article_metadata, update_article_metadata
 from app.services.ai_service import generate_ai_metadata, chunking, generate_embedding_for_chunks
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
-from app.services.search_service import index_chunk_to_ai_search,check_similarity
+from app.services.search_service import index_chunk_to_ai_search, check_similarity, delete_article_chunk
 from autentication.keycloack_service import get_current_user
 router = APIRouter()
 
@@ -97,9 +98,7 @@ async def upload_file(
 
     # salvo i chunck nella raccolta chunks
     save_chunks_metadata(article_id=article_id, chunks=chunks)
-
-
-    embeddings =generate_embedding_for_chunks(chunks)
+    embeddings = await generate_embedding_for_chunks(chunks)
 
     await index_chunk_to_ai_search(article_id=article_id , chunks=chunks, embedding=embeddings)
 
@@ -184,3 +183,38 @@ async def get_cover_image(article_id: str):
     return Response(content=file_bytes, media_type=content_type)
 
 
+@router.delete("/articles/{article_id}/delete", summary="Elimina un articolo")
+async def delete_article(article_id: str, current_user: dict = Depends(get_current_user)):
+    user_id = current_user.get("sub")
+    article = get_article_by_id(article_id)
+    if not article:
+        raise HTTPException(status_code=404, detail="Articolo non trovato")
+    if article.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Non hai i permessi per eliminare questo articolo")
+    await delete_blob(article.get("blob_url"), settings.AZURE_STORAGE_CONTAINER_NAME)
+    await delete_blob(article.get("cover_url"), settings.AZURE_STORAGE_IMAGE_CONTAINER)
+    chunk_count =delete_article_metadata(article_id)
+    await delete_article_chunk(article_id, chunk_count)
+    return {"status": "success",
+            "message": "Articolo e risorse collegate eliminati definitivamente"}
+
+
+@router.put("/articles/{article_id}/update", summary="Modifica i metadati di un articolo")
+async def update_article(
+        article_id: str,
+        update_data: ArticleUpdateModel,
+        current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user.get("sub")
+    existing_article = get_article_by_id(article_id)
+    if not existing_article:
+        raise HTTPException(status_code=404, detail="Articolo non trovato")
+    if existing_article.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Non hai i permessi per modificare questo articolo")
+    update_dict = update_data.model_dump(exclude_unset=True)
+    if not update_dict:
+        return {"status": "success",
+                "message": "Nessuna modifica richiesta"}
+    update_article_metadata(article_id, update_dict)
+    return {"status": "success",
+            "message": "Articolo aggiornato con successo"}

@@ -16,6 +16,9 @@ class UtenteLogin(BaseModel):
     username: str
     password: str
 
+class PasswordResetRequest(BaseModel):
+    email: str
+
 
 @router.post("/addUtente")
 async def registra_utente(utente: UtenteRegistration):
@@ -32,3 +35,4 @@ async def registra_utente(utente: UtenteRegistration):
 async def login(utente: UtenteLogin):
     token_response = login_user(username=utente.username, password=utente.password)
     return token_response
+

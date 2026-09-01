@@ -14,20 +14,12 @@ import 'package:http/http.dart' as http;
 
 
 // Colori globali dell'applicazione
-
-/// 60% - Sfondo: Grigio chiarissimo elegante. Fa risaltare le card bianche.
 const Color coloreSfondo = Color(0xFFF4F6F8);
-
-/// 30% - Struttura: Navy scuro. Per AppBar, Testi, Drawer e icone principali.
 const Color colorePrincipale = Color(0xFF7F5539);
-
-/// 10% - Accento: Rosso Rubino. Usato SOLO per Call to Action, Switch attivi, Loader.
 const Color coloreAccento = Color(0xFFFF6B35);
 
 Future<void> main() async {
-  // mi assicuro che flutter sia pronto prima di eseguire del codice
   WidgetsFlutterBinding.ensureInitialized();
-
   //inizializzo il database locale prima di tutto
   await SharedPreferenceManager.init();
   runApp(const MyApp());
@@ -85,10 +77,11 @@ class _MyHomePageState extends State<MyHomePage> {
   int _skip = 0;
   final int _limit = 10;
 
-  // Lista articoli caricati (mock per ora, predisposta per API)
+  String? _ragAnswer;
+
   final List<Articolo> _articles = [];
 
-  // Categorie disponibili per il filtro dropdown
+  // Lista categorie drop down
   final List<String> _categories = [
     'Tutte',
     'Politica',
@@ -184,6 +177,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   /// Esegue la ricerca. In modalità RAG invoca POST /search/rag,
   /// altrimenti POST /search/generic.
+
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
     setState(() {
@@ -207,14 +201,22 @@ class _MyHomePageState extends State<MyHomePage> {
           final Map<String, dynamic> responseData = jsonDecode(response.body);
           setState(() {
             if(_isRagMode){
-              final String aiAnswer = responseData['answer'] ?? "Nessuna risposta.";
-              final List<dynamic> relevant_chunk =responseData['relevant_chunks'] ?? [];
-
-              //TODO portarlo nella Rag page per visualizzare le conversazioni
-              debugPrint('Risposta RAG');
-              _isLoading=false;
+              if(!_isLogin) {
+                showErrorDialog(
+                    "Per poter utilizzare la ricerca RAG hai bisogno di un account. Accedi o registrati .");
+                return ;
+              }else {
+                _ragAnswer = responseData['answer'] ?? "Nessuna risposta.";
+                final List<
+                    dynamic> relevant_chunk = responseData['relevant_chunks'] ??
+                    [];
+                _articles.addAll(relevant_chunk.map((item) =>
+                    Articolo.fromJson(item as Map<String, dynamic>)).toList());
+                _hasMore = false;
+                _isLoading = false;
+              }
             }else{
-              final String corrispondenze = responseData['message'] ?? "Nessuna corrispondenza trovata";
+              _ragAnswer=null;
               final List<dynamic> results= responseData ['results'] ?? [];
               _articles.addAll(results.map((item) => Articolo.fromJson(item as Map<String, dynamic>)).toList());
               _hasMore = false;
@@ -333,6 +335,9 @@ class _MyHomePageState extends State<MyHomePage> {
                                     color: Colors.white70,
                                   ),
                                   onPressed: () {
+                                    setState(() {
+                                      _ragAnswer = null;
+                                    });
                                     _searchController.clear();
                                     _refreshArticles();
                                   },
@@ -363,7 +368,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   value: _isRagMode,
                   onChanged: (bool value) => setState(() => _isRagMode = value),
                   activeColor: Colors.white,
-                  activeTrackColor: coloreAccento, // Il tocco di rosso per l'IA!
+                  activeTrackColor: coloreAccento,
                   inactiveThumbColor: Colors.white70,
                   inactiveTrackColor: Colors.white.withAlpha(30),
                 ),
@@ -373,7 +378,6 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
         actions: [
-          // --- Icona Hamburger per aprire il Drawer (a destra) ---
           IconButton(
             icon: const Icon(Icons.menu, color: Colors.white),
             tooltip: 'Menu',
@@ -424,45 +428,43 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
 
-            // Log-in o log-out
             if (_isLogin)
-            // Se è loggato, mostra LOG-OUT
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                // Svuota la memoria locale (elimina il token JWT)
                 await SharedPreferenceManager.clear();
 
-                // Opzionale: torna al Login distruggendo tutto lo stack di pagine
-                if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                        (Route<dynamic> route) => false,
-                  );
-                }
+                setState(() {
+                  _isLogin=false;
+                  _refreshArticles();
+                });
               })
             else
-            // Se NON è loggato, mostra LOG-IN
               _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
                 ).then((_) {
-                  // Quando l'utente torna indietro dal Login, ricontrolla lo stato!
                   _checkLoginStatus();
                 });
               }),
             const Divider(),
             _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const CronologiaScreen()),
-              );
+              if (_isLogin) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                );
+              } else{
+                showErrorDialog("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
+              }
             },),
             _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
+              if(_isLogin){
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const  UploadScreen()),
-              );
+              );}else{
+                showErrorDialog("É necessario il login per poter caricare un articolo. Accedi o registrati");
+              }
             },),
             _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info sistema',() {
             Navigator.push(
@@ -470,18 +472,17 @@ class _MyHomePageState extends State<MyHomePage> {
             MaterialPageRoute(builder: (context) => const InformazioniScreen()),
             );
             },),
-            _buildDrawerItem(Icons.psychology_outlined, 'RAG', 'Risposte del sistema RAG',() {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const  UploadScreen()), // todo portarlo in RAG page
-              );
-            },),
+           /// _buildDrawerItem(Icons.psychology_outlined, 'RAG', 'Risposte del sistema RAG',() {
+           ///   Navigator.push(
+           ///     context,
+           ///     MaterialPageRoute(builder: (context) => const  UploadScreen()),
+           ///   );
+           /// },),
           ],
         ),
       ),
 
 
-      // BODY: Infinite Scroll con GridView.builder di Card articolo
 
       body: RefreshIndicator(
         color: coloreAccento,
@@ -489,24 +490,74 @@ class _MyHomePageState extends State<MyHomePage> {
         onRefresh: _refreshArticles,
         child: _articles.isEmpty && _isLoading
             ? const Center(child: CircularProgressIndicator(color: coloreAccento))
-            : Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-          child: GridView.builder(
-            controller: _scrollController,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 5,
-              childAspectRatio: 0.85,
-              crossAxisSpacing: 20,
-              mainAxisSpacing: 20,
+            : Column(
+          children: [
+
+            if (_ragAnswer != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: coloreAccento.withAlpha(50), width: 2),
+                  boxShadow: [
+                    BoxShadow(color: coloreAccento.withAlpha(20), blurRadius: 15, offset: const Offset(0, 5))
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.psychology, color: coloreAccento, size: 28),
+                        SizedBox(width: 10),
+                        Text("Risposta dell'Assistente", style: TextStyle(fontWeight: FontWeight.bold, color: coloreAccento, fontSize: 18)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _ragAnswer!,
+                      style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
+            if (_ragAnswer != null && _articles.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(28, 16, 24, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "Articoli Consultati",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorePrincipale),
+                  ),
+                ),
+              ),
+
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                child: GridView.builder(
+                  controller: _scrollController,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 5,
+                    childAspectRatio: 0.65,
+                    crossAxisSpacing: 20,
+                    mainAxisSpacing: 20,
+                  ),
+                  itemCount: _articles.length + (_hasMore ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (index == _articles.length) {
+                      return const Center(child: CircularProgressIndicator(color: coloreAccento));
+                    }
+                    return _buildArticleCard(_articles[index]);
+                  },
+                ),
+              ),
             ),
-            itemCount: _articles.length + (_hasMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index == _articles.length) {
-                return const Center(child: CircularProgressIndicator(color: coloreAccento));
-              }
-              return _buildArticleCard(_articles[index]);
-            },
-          ),
+          ],
         ),
       ),
     );
@@ -559,7 +610,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
               // Immagine card
               Expanded(
-                flex: 5,
+                flex: 4,
                 child: Container(
                   width: double.infinity,
                   color: coloreSfondo, // Sfondo per il placeholder
@@ -584,8 +635,8 @@ class _MyHomePageState extends State<MyHomePage> {
                       // Lista di categorie
                       if (category.isNotEmpty)
                         Wrap(
-                          spacing: 6.0, // spazio orizzontale tra i badge
-                          runSpacing: 4.0, // spazio verticale se vanno a capo
+                          spacing: 6.0,
+                          runSpacing: 2.0,
                           children: category.map((c) => Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
@@ -655,4 +706,29 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Icon(icon, size: 56, color: colorePrincipale.withAlpha(50)),
     );
   }
+
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Errore'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                );
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 }

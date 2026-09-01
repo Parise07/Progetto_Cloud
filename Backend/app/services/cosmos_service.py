@@ -7,15 +7,21 @@ articles_container = database.get_container_client(settings.COSMOS_ARTICLES_CONT
 chunks_container = database.get_container_client(settings.COSMOS_CHUNKS_CONTAINER)
 
 def save_chunks_metadata(article_id: str, chunks: list[str]):
+    """
+    Funzione che crea un collegamento tra l'articolo e i suoi chunck e li acrica su cosmos
+    nel container chunk
+    :param article_id:
+    :param chunks:
+    :return:
+    """
     try:
         for index, text in enumerate(chunks):
             chunk_document = {
-                "id": f"{article_id}-chunk-{index}",  # ID univoco del chunk
-                "article_id": article_id,  # Riferimento all'articolo padre
-                "chunk_index": index,  # Posizione del frammento
-                "text": text  # Il testo effettivo
+                "id": f"{article_id}-chunk-{index}",
+                "article_id": article_id,
+                "chunk_index": index,
+                "text": text
             }
-            # Salva il singolo chunk nel contenitore dedicato
             chunks_container.create_item(body=chunk_document)
 
     except CosmosHttpResponseError as e:
@@ -26,6 +32,11 @@ def save_chunks_metadata(article_id: str, chunks: list[str]):
         )
 
 def save_article_metadata(manual_data: dict) -> dict:
+    """
+    Funzione che riceve i metadati inseriti dall'utente e li carica su cosmos
+    :param manual_data:
+    :return dict:
+    """
     try:
         created_item= articles_container.create_item(body=manual_data)
         return created_item
@@ -36,8 +47,13 @@ def save_article_metadata(manual_data: dict) -> dict:
         )
 
 def check_title_exists(title: str) -> bool:
-    query= "SELECT * FROM c WHERE c.manual.title = @title"
+    """Funzione di check (primo blocco) sulla similarità dei titoli
+    evitando che due articoli abbiano stesso titolo
+    :param title:
+    :return boolean:
+    """
 
+    query= "SELECT * FROM c WHERE c.manual.title = @title"
     parameters = [
         {"name": "@title", "value": title}
     ]
@@ -50,12 +66,15 @@ def check_title_exists(title: str) -> bool:
            return True
        return False
     except CosmosHttpResponseError as e:
-        # Gestisci eventuali errori di connessione
         print(f"Errore durante la query su Cosmos DB: {e}")
         raise
 
 def search_by_keywords(keywords: str) -> list[dict]:
-    '''Ricerca normale attraverso keywords '''
+    """
+    Funzione che effettua ricerca tramite keywords
+    :param keywords:
+    :return list[dict]: lista di articoli
+    """
     query = """
             SELECT c.id, c.manual.title, c.manual.author, 
                    c.manual.description, c.manual.tags, 
@@ -84,8 +103,14 @@ def search_by_keywords(keywords: str) -> list[dict]:
         return []
 
 def get_articles_list(decreasing: bool = False, category: str = None, skip: int =0 , limit: int = 10) -> list[dict]:
-    ''' funzione che restituisce una lista di articoli nella pagina per
-    l'inifinite scroll e ordina per data di inserimento per avere gli articoli più recenti'''
+    """
+    Funzione che restituisce una lista di articoli in un range compreso tra skip e limit
+    :param decreasing:
+    :param category:
+    :param skip:
+    :param limit:
+    :return list[dict]: lista di articoli
+    """
 
     query = """
             SELECT c.id, c.manual.title, c.manual.author, 
@@ -118,7 +143,11 @@ def get_articles_list(decreasing: bool = False, category: str = None, skip: int 
         return []
 
 def get_article_by_id(article_id: str) -> dict:
-    '''Restituisce un singolo articolo dato il suo ID'''
+    """
+    Funzione che dato l'id dell'articolo ne restituisce le informazioni ad esso legato
+    :param article_id:
+    :return dict : articolo
+    """
     try:
         return articles_container.read_item(item=article_id, partition_key= article_id)
     except CosmosHttpResponseError as e:
@@ -126,7 +155,11 @@ def get_article_by_id(article_id: str) -> dict:
         return {}
 
 def get_chunks_by_article_id(article_id: str) -> list[dict]:
-    '''Recupera tutti i frammenti di un articolo dato il suo ID'''
+    """
+    Recupera tutti i frammenti di un articolo dato il suo ID
+    :param article_id:
+    :return list[dict]: lista di chunk
+    """
 
     query = "SELECT c.chunk_index, c.text FROM c WHERE c.article_id = @article_id ORDER BY c.chunk_index ASC"
     parameters = [{"name": "@article_id", "value": article_id}]
@@ -142,14 +175,20 @@ def get_chunks_by_article_id(article_id: str) -> list[dict]:
         return []
 
 def get_article_by_user(user_id: str, keyword: str = None) -> list[dict]:
-    ''' ricevuto uno lo user ID recupera tutti gli articoli collegati ad esso
-     se richiesto filtra anche il risulta tramite keywords per una modifica più rapida'''
-    query = """
-        SELECT c.id, c.manual.title, c.manual.author, 
-               c.manual.category, c.blob_url, c.cover_url, c.uploaded_at
-        FROM c 
-        WHERE c.user_id = @user_id
     """
+    ricevuto uno lo user ID recupera tutti gli articoli collegati ad esso
+     se richiesto filtra anche il risulta tramite keywords per una modifica più rapida
+    :param user_id:
+    :param keyword:
+    :return list[dict]:
+    """
+    query = """
+            SELECT c.id, c.manual.title, c.manual.author, 
+                   c.manual.description, c.manual.tags,
+                   c.manual.category, c.blob_url, c.cover_url, c.uploaded_at
+            FROM c 
+            WHERE c.user_id = @user_id
+        """
     parameters = [{"name": "@user_id", "value": user_id}]
     if keyword and keyword.strip():
         query += """ AND (
@@ -169,3 +208,47 @@ def get_article_by_user(user_id: str, keyword: str = None) -> list[dict]:
     except CosmosHttpResponseError as e:
         print(f"Errore recupero articoli: {e}")
         return []
+
+
+def delete_article_metadata(article_id: str) -> int:
+    """
+    Funzione che dato un id di un articolo elimina i sui metadati
+    :param article_id:
+    :return int: numero di chunk eliminati
+    """
+    chunk_count = 0
+    try:
+        chunks = get_chunks_by_article_id(article_id)
+        chunk_count = len(chunks)
+        for chunk in chunks:
+            chunk_id = f"{article_id}-chunk-{chunk['chunk_index']}"
+            try:
+                chunks_container.delete_item(item=chunk_id, partition_key=chunk_id)
+            except CosmosHttpResponseError:
+                pass
+        articles_container.delete_item(item=article_id, partition_key=article_id)
+    except CosmosHttpResponseError as e:
+        print(f"Errore durante l'eliminazione da Cosmos DB: {e}")
+
+    return chunk_count
+
+
+def update_article_metadata(article_id: str, new_data: dict) -> dict:
+    """
+    Funzione che aggiorna solo i metadati manuali
+    :param article_id:
+    :param new_data:
+    :return dict:
+    """
+    try:
+        article = articles_container.read_item(item=article_id, partition_key=article_id)
+        if "manual" not in article or article["manual"] is None:
+            article["manual"] = {}
+        for key, value in new_data.items():
+            if value is not None:
+                article["manual"][key] = value
+        updated_article = articles_container.replace_item(item=article_id, body=article)
+        return updated_article
+    except CosmosHttpResponseError as e:
+        print(f"Errore durante la modifica su Cosmos DB: {e}")
+        raise HTTPException(status_code=500, detail="Impossibile aggiornare l'articolo")

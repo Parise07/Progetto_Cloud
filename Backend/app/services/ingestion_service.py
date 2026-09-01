@@ -4,7 +4,7 @@ from docx import Document
 import PyPDF2
 
 def extract_text_from_file(file_bytes: bytes, filename: str)-> str:
-
+    """Funzione che estrae il testo da un file avente una delle estensioni ammesse """
     extension = filename.split(".")[-1].lower()
     if extension in ['txt','md']:
         return file_bytes.decode("utf-8")

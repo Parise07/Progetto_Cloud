@@ -63,8 +63,8 @@ modelli nella sezione **"Model deployments"**:
 
 | Deployment name        | Modello                   | Versione     | SKU      | TPM |
 |------------------------|---------------------------|--------------|----------|-----|
-| `text-embedding-ada-002` | text-embedding-ada-002  | 2            | Standard | 30K |
-| `gpt-4o-mini`          | gpt-4o-mini               | 2024-07-18   | Standard | 30K |
+| `text-embedding-ada-002` | text-embedding-ada-002  | 2            | Global Standard | 30K |
+| `gpt-4o-mini`          | gpt-4o-mini               | 2024-07-18   | Data Zone Standard | 30K |
 
 > **Alternativa embedding**: se `text-embedding-ada-002` non fosse disponibile
 > in italynorth, usare `text-embedding-3-small` (1536 dim, stessa interfaccia API).

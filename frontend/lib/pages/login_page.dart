@@ -12,8 +12,9 @@ const Color colorePrincipale = Color(0xFF7F5539);
 const Color coloreAccento = Color(0xFFFF6B35);
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool popAfterLogin;
 
+  const LoginScreen({super.key, this.popAfterLogin = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -27,24 +28,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final password = TextEditingController();
   final email = TextEditingController();
 
+  bool _nascondiPasswordLogin = true;
+  bool _nascondiPasswordRegistrazione = true;
+
   @override
   void initState(){
     super.initState();
-    checkLoginStatus(); // controlla che l'utente è già loggato
   }
 
-  Future<void> checkLoginStatus() async{
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
-    if(accessToken != null){
-      // Stessa magia: aspettiamo il frame!
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MyApp()),
-        );
-      });
-    }
-  }
+
 
   //funzione per il login
   Future<void> Login() async{
@@ -83,11 +75,8 @@ class _LoginScreenState extends State<LoginScreen> {
           await storage.setString('refresh', refreshToken);
 
           if (!mounted) return;
+          showSuccessDialog("Accesso effettuato con successo bentornato user : $usernametxt");
 
-          Navigator.pushReplacement( // Sempre meglio pushReplacement dal login
-            context,
-            MaterialPageRoute(builder: (context) => const MyApp()),
-          );
         } else {
           if (!mounted) return; // Protezione anche per il dialog!
           showErrorDialog('Username o password non corretta: ${responseLogin.body}');
@@ -169,6 +158,14 @@ class _LoginScreenState extends State<LoginScreen> {
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
+                if (widget.popAfterLogin) {
+                  Navigator.pop(context, true);
+                } else {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MyApp()),
+                  );
+                }
               },
               child: const Text('OK'),
             ),
@@ -246,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 curve: Curves.easeInOut,
                 top: 0,
                 bottom: 0,
-                left: !_isLogin ? 0 : -width / 2, // Scivola fuori a sinistra
+                left: !_isLogin ? 0 : -width / 2,
                 width: width / 2,
                 child: _buildInfoText(
                   title: 'BENVENUTO!',
@@ -263,41 +260,49 @@ class _LoginScreenState extends State<LoginScreen> {
                 curve: Curves.easeInOut,
                 top: 0,
                 bottom: 0,
-                left: _isLogin ? 0 : -width / 2, // Scivola fuori a sinistra
+                left: _isLogin ? 0 : -width / 2,
                 width: width / 2,
-                child: _buildFormContainer(
-                  isVisible: _isLogin,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Login', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                      const SizedBox(height: 30),
-                      _buildTextField('Username', Icons.person,loginUsername),
-                      const SizedBox(height: 20),
-                      _buildTextField('Password', Icons.lock, loginPassword,isPassword: true),
-
-                      // Procedura di recupero password
-
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            debugPrint("Chiama API per Recupero Password");
-                          },
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 500),
+                  opacity: _isLogin ? 1.0 : 0.0,
+                  child: IgnorePointer(
+                    ignoring: !_isLogin,
+                    child: Stack(
+                      children: [
+                        // --- TASTO "X" IN ALTO A SINISTRA ---
+                        Positioned(
+                          top: 16,
+                          left: 16,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70, size: 28),
+                            onPressed: () => Navigator.pop(context),
                           ),
-                          child: const Text('Password dimenticata?', style: TextStyle(color: Colors.white70, fontSize: 12)),
                         ),
-                      ),
 
-                      const SizedBox(height: 24),
-                      _buildSubmitButton('Accedi', () => Login() ),
-                      const SizedBox(height: 20),
-                      _buildToggleText("Non hai un account? ", "Registrati", () => setState(() => _isLogin = false)),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 50.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('Login', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                              const SizedBox(height: 30),
+                              _buildTextField('Username', Icons.person, loginUsername),
+                              const SizedBox(height: 20),
+                              _buildTextField('Password', Icons.lock, loginPassword, isPassword: true, obscureText: _nascondiPasswordLogin,
+                                onToggleVisibility: () {
+                                  setState(() {
+                                    _nascondiPasswordLogin = !_nascondiPasswordLogin;
+                                  });
+                                },),
+                              const SizedBox(height: 24),
+                              _buildSubmitButton('Accedi', () => Login()),
+                              const SizedBox(height: 20),
+                              _buildToggleText("Non hai un account? ", "Registrati", () => setState(() => _isLogin = false)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -312,23 +317,50 @@ class _LoginScreenState extends State<LoginScreen> {
                 bottom: 0,
                 left: !_isLogin ? width / 2 : width,
                 width: width / 2,
-                child: _buildFormContainer(
-                  isVisible: !_isLogin,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('Registrati', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
-                      const SizedBox(height: 30),
-                      _buildTextField('Username', Icons.person,username),
-                      const SizedBox(height: 20),
-                      _buildTextField('Email', Icons.email,email),
-                      const SizedBox(height: 20),
-                      _buildTextField('Password', Icons.lock, password,isPassword: true),
-                      const SizedBox(height: 30),
-                      _buildSubmitButton('Registrati', () => SignIn()),
-                      const SizedBox(height: 20),
-                      _buildToggleText("Hai già un account? ", "Accedi", () => setState(() => _isLogin = true)),
-                    ],
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 500),
+                  opacity: !_isLogin ? 1.0 : 0.0,
+                  child: IgnorePointer(
+                    ignoring: _isLogin,
+                    child: Stack(
+                      children: [
+                        // --- TASTO "X" IN ALTO A DESTRA ---
+                        Positioned(
+                          top: 16,
+                          right: 16, // <-- Posizionato a destra!
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70, size: 28),
+                            onPressed: () => Navigator.pop(context), // Chiude il form
+                          ),
+                        ),
+                        // --- CONTENUTO DEL FORM ---
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 50.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text('Registrati', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white)),
+                              const SizedBox(height: 30),
+                              _buildTextField('Username', Icons.person, username),
+                              const SizedBox(height: 20),
+                              _buildTextField('Email', Icons.email, email),
+                              const SizedBox(height: 20),
+                              _buildTextField('Password', Icons.lock, password, isPassword: true,
+                                obscureText: _nascondiPasswordLogin,
+                                onToggleVisibility: () {
+                                  setState(() {
+                                    _nascondiPasswordLogin = !_nascondiPasswordLogin;
+                                  });
+                                },),
+                              const SizedBox(height: 30),
+                              _buildSubmitButton('Registrati', () => SignIn()),
+                              const SizedBox(height: 20),
+                              _buildToggleText("Hai già un account? ", "Accedi", () => setState(() => _isLogin = true)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -367,29 +399,29 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildFormContainer({required bool isVisible, required Widget child}) {
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 500),
-      opacity: isVisible ? 1.0 : 0.0,
-      child: IgnorePointer(
-        ignoring: !isVisible,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 50.0),
-          child: child,
-        ),
-      ),
-    );
-  }
 
-  Widget _buildTextField(String label, IconData icon, TextEditingController controller,{bool isPassword = false}) {
+
+  Widget _buildTextField(String label, IconData icon, TextEditingController controller,{bool isPassword = false , bool? obscureText, VoidCallback? onToggleVisibility,}) {
     return TextFormField(
       controller: controller,
-      obscureText: isPassword,
+      obscureText: isPassword ? (obscureText ?? true) : false,
       style: const TextStyle(color: Colors.white),
+      cursorColor: coloreAccento,
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70, fontSize: 14),
-        suffixIcon: Icon(icon, color: Colors.white70, size: 20),
+        prefixIcon: Icon(icon, color: Colors.white70, size: 20),
+        suffixIcon: isPassword
+            ? IconButton(
+          icon: Icon(
+            (obscureText ?? true) ? Icons.visibility_off : Icons.visibility,
+            color: Colors.white70,
+            size: 20,
+          ),
+          onPressed: onToggleVisibility,
+          splashColor: Colors.transparent,
+        )
+            : null,
         enabledBorder: const UnderlineInputBorder(
           borderSide: BorderSide(color: Colors.white30, width: 1.5),
         ),

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/main.dart';
+import 'package:frontend/pages/upload_page.dart';
 import 'dart:html' as html;
 import '../api_config.dart';
+import 'package:frontend/pages/cronologia_page.dart';
 import '../shared_preferences.dart';
 import "package:pdf/widgets.dart" as pw;
 import 'package:pdf/pdf.dart';
@@ -8,13 +11,13 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../utils.dart';
+import 'info_page.dart';
+import 'login_page.dart';
 
 
-
-// --- COLORI DESIGN SYSTEM 60-30-10 ---
 const Color coloreSfondo = Color(0xFFF4F6F8);
-const Color colorePrincipale = Color(0xFF7F5539); // Marrone
-const Color coloreAccento = Color(0xFFFF6B35);    // Arancione
+const Color colorePrincipale = Color(0xFF7F5539);
+const Color coloreAccento = Color(0xFFFF6B35);
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -26,23 +29,45 @@ class ArticleDetailScreen extends StatefulWidget {
 }
 
 class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
-  // Stato per l'apertura/chiusura della chat IA laterale
   bool _isChatOpen = false;
-  bool _isLogin = false;
   bool _isLoading = true;
+  bool _isLogin = false;
+ bool _isChatLoading= false;
 
   Articolo? _article;
-  Future<void> _checkLoginStatus() async{
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
-    setState(() {
-      _isLogin= accessToken != null;
-    });
-  }
+
+
+  final TextEditingController _chatController= TextEditingController();
+  final ScrollController _chatScrollController= ScrollController();
+
+  final List<Map<String,dynamic>> _chatMessage = [
+    {"text":"Ciao! Fai una domanda incentrata sull'articolo in questione" , "isAi":true}
+  ];
+
+
 
   @override
   void initState() {
     super.initState();
+    _checkLoginStatus();
     _loadArticle();
+  }
+  @override
+  void dispose(){
+    _chatController.dispose();
+    _chatScrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    String? accessToken = SharedPreferenceManager.instance.getString('access');
+
+    // Assicuriamoci che la pagina esista ancora prima di chiamare setState!
+    if (mounted) {
+      setState(() {
+        _isLogin = accessToken != null;
+      });
+    }
   }
 
 Future<void> _loadArticle() async {
@@ -57,7 +82,7 @@ Future<void> _loadArticle() async {
           throw Exception('Errore ${response.statusCode} nel recupero articolo');
         }
         final Map<String, dynamic> data = jsonDecode(response.body);
-        // L'endpoint GET /articles/{id} restituisce { status, article, chunks }
+
         final Map<String, dynamic>? articleJson = data['article'];
         if (articleJson == null) {
           throw Exception('Articolo non trovato nella risposta');
@@ -76,6 +101,245 @@ Future<void> _loadArticle() async {
         });
       }
 }
+
+  Future<void> _sendMessage() async{
+    if (!_isLogin) {
+      _mostraDialogLoginRichiesto("Devi effettuare l'accesso per poter fare domande all'IA.");
+      return;
+    }
+    final String query= _chatController.text.trim();
+    if(query.isEmpty)return;
+    setState(() {
+      _chatMessage.add({"text":query, "isAi" : false});
+      _isChatLoading = true;
+    });
+
+    _chatController.clear();
+    _scrollToBottom();
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/search/article-chat'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'question': query,
+          'current_article_id': widget.articleId
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final String answer = data['answer'] ?? "Nessuna risposta generata.";
+        setState(() {
+          _chatMessage.add({"text": answer, "isAi": true});
+        });
+      } else {
+        setState(() {
+          _chatMessage.add({"text": "Errore dal server: ${response.statusCode}", "isAi": true});
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _chatMessage.add({"text": "Errore di connessione al server.", "isAi": true});
+      });
+    } finally {
+      setState(() {
+        _isChatLoading = false;
+      });
+      _scrollToBottom();
+    }
+  }
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScrollController.hasClients) {
+        _chatScrollController.animateTo(
+          _chatScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _scaricaFileJson() async {
+    final article = _article;
+    if(!_isLogin){
+      _mostraDialogLoginRichiesto("Il documento reipilogativo non può essere Scaricato c'è bisogno di effettuare il Login ");
+      return ;
+    }
+    if (article == null) return;
+    try {
+      final pdf = pw.Document();
+      final tFont = pw.Font.times();
+      final tBold = pw.Font.timesBold();
+      final tItalic = pw.Font.timesItalic();
+
+      //scarichiamo l'immagine della copertina
+
+      pw.MemoryImage? coverImage;
+      if (article.coverUrl.isNotEmpty && !article.coverUrl.contains('placeholder')) {
+        try {
+          // FIX: Chiamiamo il nostro Backend invece dell'URL diretto del Blob!
+          final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/articles/${article.id}/cover'));
+
+          if (response.statusCode == 200) {
+            coverImage = pw.MemoryImage(response.bodyBytes);
+          } else {
+            print("Errore backend: Impossibile scaricare immagine per il PDF");
+          }
+        } catch (e) {
+          print("Eccezione durante il fetch dell'immagine per il PDF: $e");
+          coverImage = null;
+        }
+      }
+      pw.Widget buildRow(String label, String value) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.SizedBox(
+                width: 110,
+                child: pw.Text(label, style: pw.TextStyle(font: tBold, fontSize: 12)),
+              ),
+              pw.Expanded(
+                child: pw.Text(
+                  value.isNotEmpty ? value : "-",
+                  style: pw.TextStyle(font: tFont, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      pw.Widget sectionTitle(String title) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.only(top: 16, bottom: 8),
+          child: pw.Text(title, style: pw.TextStyle(font: tBold, fontSize: 16)),
+        );
+      }
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+
+          footer: (context) => pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              'Pagina ${context.pageNumber} di ${context.pagesCount}',
+              style: pw.TextStyle(font: tFont, fontSize: 9, color: PdfColors.grey600),
+            ),
+          ),
+          build: (pw.Context contextPdf) {
+            return [
+              pw.Text(article.title, style: pw.TextStyle(font: tBold, fontSize: 24)),
+              pw.SizedBox(height: 16),
+
+              if (coverImage != null) ...[
+                pw.Center(
+                  child: pw.Container(
+                    height: 220,
+                    child: pw.Image(coverImage, fit: pw.BoxFit.cover),
+                  ),
+                ),
+                pw.SizedBox(height: 16),
+              ],
+
+              sectionTitle("Informazioni generali"),
+              buildRow("Caricato il", article.uploadedAt),
+
+              sectionTitle("Metadati Manuali"),
+              buildRow("Autore", article.author),
+              buildRow("Descrizione", article.description),
+              buildRow("Categoria", article.category.join(", ")),
+              buildRow("Tags", article.tags.join(", ")),
+
+              sectionTitle("Analisi IA"),
+              buildRow("Sottotitolo", article.subtitle),
+              buildRow("Lingua", article.language),
+              buildRow("Parole chiave", article.keywords.join(", ")),
+              buildRow("Entità rilevate", article.entities.join(", ")),
+              pw.SizedBox(height: 8),
+              pw.Text("Riassunto", style: pw.TextStyle(font: tBold, fontSize: 12)),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                article.summary.isNotEmpty ? article.summary : "-",
+                style: pw.TextStyle(font: tFont, fontSize: 12),
+              ),
+            ];
+          },
+        ),
+      );
+
+      final bytes = await pdf.save();
+      final blob = html.Blob([bytes], 'application/pdf');
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.AnchorElement(href: url)
+        ..setAttribute("download", "Metadati_${article.id}.pdf")
+        ..click();
+
+      html.Url.revokeObjectUrl(url);
+    } catch (e) {
+      if (!mounted) return;
+      print("Errore nella generazione del PDF: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Impossibile generare il PDF: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _scaricaDocumento() async {
+    if(!_isLogin) {
+      _mostraDialogLoginRichiesto("Il documento non può essere Scaricato c'è bisogno di effettuare il Login ");
+      return;
+    }
+    final article = _article;
+    if (article == null) return;
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/articles/${article.id}/download'),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Errore ${response.statusCode} durante il download');
+      }
+
+      final contentType = response.headers['content-type'] ?? 'application/octet-stream';
+
+      String filename = 'articolo_${article.id}';
+      final disposition = response.headers['content-disposition'];
+      if (disposition != null) {
+        final match = RegExp(r'filename="?([^"]+)"?').firstMatch(disposition);
+        if (match != null && match.group(1) != null) {
+          filename = match.group(1)!;
+        }
+      }
+
+      final blob = html.Blob([response.bodyBytes], contentType);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+
+      html.AnchorElement(href: url)
+        ..setAttribute("download", filename)
+        ..click();
+
+      html.Url.revokeObjectUrl(url);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Impossibile scaricare il documento: $e"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
   @override
   Widget build(BuildContext context) {
     // Breakpoint per impilare Immagine e Metadati Manuali su schermi piccoli
@@ -118,6 +382,95 @@ Future<void> _loadArticle() async {
         elevation: 0,
       ),
 
+      // Menù a tendina Laterale
+      endDrawer: Drawer(
+        backgroundColor: coloreSfondo,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: colorePrincipale,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Icon(
+                    Icons.newspaper,
+                    size: 48,
+                    color: coloreAccento,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'NewsArchive RAG',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Sistema di Archiviazione Notizie',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withAlpha(179),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            if (_isLogin)
+              _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
+                await SharedPreferenceManager.clear();
+
+                setState(() {
+                  _isLogin=false;
+                });
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MyApp()),
+                );
+              })
+            else
+              _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                ).then((_) {
+                  _checkLoginStatus();
+                });
+              }),
+            const Divider(),
+            _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
+              if (_isLogin) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                );
+              } else{
+                _mostraDialogLoginRichiesto("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
+              }
+            },),
+            _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
+              if(_isLogin){
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const  UploadScreen()),
+                );}else{
+                _mostraDialogLoginRichiesto("É necessario il login per poter caricare un articolo. Accedi o registrati");
+              }
+            },),
+            _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info sistema',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+              );
+            },),
+          ],
+        ),
+      ),
 
       // tasto chat chiusa
 
@@ -174,11 +527,9 @@ Future<void> _loadArticle() async {
                 _buildAIMetadata(),
                 const SizedBox(height: 48),
 
-                // chunck estrapolati TODO indeciso se lasciarli o toglierli
-                _buildExtractedText(),
+                _buildResumeText(),
                 const SizedBox(height: 48),
 
-                // button per download
                 Wrap(
                   spacing: 24, // Spazio orizzontale
                   runSpacing: 16, // Spazio verticale se lo schermo è troppo stretto
@@ -218,7 +569,17 @@ Future<void> _loadArticle() async {
     );
   }
 
-
+  Widget _buildDrawerItem(IconData icon, String title, String subtitle, VoidCallback onTapAction) {
+    return ListTile(
+      leading: Icon(icon, color: colorePrincipale),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      onTap: () {
+        Navigator.pop(context);
+        onTapAction();
+      },
+    );
+  }
 
   Widget _buildCoverImage() {
     final coverUrl = _article!.coverUrl;
@@ -271,22 +632,26 @@ Future<void> _loadArticle() async {
         _buildMetadataCard(
           children: [
             _buildDetailRow("Sottotitolo", _article!.subtitle),
-            _buildDetailRow("Riassunto", _article!.summary),
             _buildDetailRow("Lingua", _article!.language),
             _buildTagsRow("Parole Chiave", _article!.keywords, coloreAccento),
+            Text(
+              "Entities",
+              style: const TextStyle(fontWeight: FontWeight.bold, color: colorePrincipale, fontSize: 15),
+            ),
             const SizedBox(height: 8),
-            _buildTagsRow("Entità Rilevate", _article!.entities, Colors.indigo),
+            _buildGroupedEntities(List<String>.from(_article!.entities))
           ],
         ),
       ],
     );
   }
 
-  Widget _buildExtractedText() {
+  Widget _buildResumeText() {
+    final String fullText = _article!.summary;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle("Testo Estrapolato"),
+        _buildSectionTitle("Riassunto"),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(24),
@@ -296,12 +661,9 @@ Future<void> _loadArticle() async {
             border: Border.all(color: colorePrincipale.withAlpha(20)),
             boxShadow: [BoxShadow(color: colorePrincipale.withAlpha(10), blurRadius: 10, offset: const Offset(0, 4))],
           ),
-          child: const Text(
-            "Il testo estratto completo apparirà in questo box. "
-                "In produzione, qui verranno renderizzati i frammenti (chunk) provenienti da Cosmos DB o il testo estrapolato originariamente dal Blob Storage.\n\n"
-                "L'intelligenza artificiale ha rivoluzionato il modo in cui gestiamo le informazioni nel cloud. "
-                "Grazie ai Large Language Models, oggi possiamo estrarre insight in frazioni di secondo...",
-            style: TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
+          child: Text(
+            fullText,
+            style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
           ),
         ),
       ],
@@ -440,11 +802,14 @@ Future<void> _loadArticle() async {
 
           // AREA MESSAGGI
           Expanded(
-            child: ListView(
+            child: ListView.builder(
+              controller: _chatScrollController,
               padding: const EdgeInsets.all(20),
-              children: [
-                _buildChatBubble("Ciao! Fai una domanda specifica su questo articolo.", isAi: true),
-              ],
+              itemCount: _chatMessage.length ,
+              itemBuilder: (context, index) {
+                  final msg = _chatMessage[index];
+                  return _buildChatBubble(msg["text"], isAi: msg["isAi"]);
+              },
             ),
           ),
 
@@ -456,6 +821,8 @@ Future<void> _loadArticle() async {
               children: [
                 Expanded(
                   child: TextField(
+                    controller: _chatController,
+                    onSubmitted: (_) => _sendMessage(),
                     decoration: InputDecoration(
                       hintText: "Chiedi qualcosa all'IA...",
                       hintStyle: const TextStyle(fontSize: 14),
@@ -470,7 +837,10 @@ Future<void> _loadArticle() async {
                 CircleAvatar(
                   radius: 24,
                   backgroundColor: coloreAccento,
-                  child: IconButton(icon: const Icon(Icons.send, color: Colors.white, size: 20), onPressed: () {}), //todo sistemare con controllo del login
+                  child: IconButton(
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                    onPressed: _isChatLoading ? null : _sendMessage,
+                  ),
                 ),
               ],
             ),
@@ -499,178 +869,95 @@ Future<void> _loadArticle() async {
     );
   }
 
-  Future<void> _scaricaFileJson() async {
-    final article = _article;
-    if (article == null) return;
-    try {
-      final pdf = pw.Document();
-      final tFont = pw.Font.times();
-      final tBold = pw.Font.timesBold();
-      final tItalic = pw.Font.timesItalic();
 
-      //scarichiamo l'immagine della copertina
+  void _mostraDialogLoginRichiesto(String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Accesso Richiesto', style: TextStyle(color: colorePrincipale, fontWeight: FontWeight.bold)),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annulla', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context); // Chiude il popup
+                // Viaggio verso il login con il biglietto di "ritorno" attivato!
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen(popAfterLogin: true)),
+                ).then((_) {
+                  _checkLoginStatus();
+                });
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: coloreAccento),
+              child: const Text('Vai al Login', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-      pw.MemoryImage? coverImage;
-      if (article.coverUrl.isNotEmpty) {
-        try {
-          final response = await http.get(Uri.parse(article.coverUrl));
-          if (response.statusCode == 200) {
-            coverImage = pw.MemoryImage(response.bodyBytes);
-          }
-        } catch (_) {
-          coverImage = null;
+  Widget _buildGroupedEntities(List<String> entities) {
+    if (entities.isEmpty) return const SizedBox.shrink();
+
+    Map<String, List<String>> grouped = {};
+    for (String entity in entities) {
+      List<String> parts = entity.split(':');
+      if (parts.length >= 2) {
+        String macro = parts[0].trim();
+        String name = parts.sublist(1).join(':').trim();
+
+        if (!grouped.containsKey(macro)) {
+          grouped[macro] = [];
         }
+        grouped[macro]!.add(name);
+      } else {
+        if (!grouped.containsKey("ALTRO")) grouped["ALTRO"] = [];
+        grouped["ALTRO"]!.add(entity);
       }
-      pw.Widget buildRow(String label, String value) {
-        return pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 10),
-          child: pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: grouped.entries.map((entry) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              pw.SizedBox(
-                width: 110,
-                child: pw.Text(label, style: pw.TextStyle(font: tBold, fontSize: 12)),
+              SizedBox(
+                width: 130,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6.0),
+                  child: Text(
+                    "${entry.key}:",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: colorePrincipale, fontSize: 13),
+                  ),
+                ),
               ),
-              pw.Expanded(
-                child: pw.Text(
-                  value.isNotEmpty ? value : "-",
-                  style: pw.TextStyle(font: tFont, fontSize: 12),
+              Expanded(
+                child: Wrap(
+                  spacing: 6, runSpacing: 6,
+                  children: entry.value.map((name) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.indigo.withAlpha(15),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.indigo.withAlpha(40))
+                    ),
+                    child: Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.indigo)),
+                  )).toList(),
                 ),
               ),
             ],
           ),
         );
-      }
-
-      pw.Widget sectionTitle(String title) {
-        return pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 16, bottom: 8),
-          child: pw.Text(title, style: pw.TextStyle(font: tBold, fontSize: 16)),
-        );
-      }
-
-      pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          header: (context) => pw.Text(
-            article.title,
-            style: pw.TextStyle(font: tItalic, fontSize: 10, color: PdfColors.grey700),
-          ),
-          footer: (context) => pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              'Pagina ${context.pageNumber} di ${context.pagesCount}',
-              style: pw.TextStyle(font: tFont, fontSize: 9, color: PdfColors.grey600),
-            ),
-          ),
-          build: (pw.Context contextPdf) {
-            return [
-              pw.Text(article.title, style: pw.TextStyle(font: tBold, fontSize: 24)),
-              pw.SizedBox(height: 16),
-
-              if (coverImage != null) ...[
-                pw.Center(
-                  child: pw.Container(
-                    height: 220,
-                    child: pw.Image(coverImage, fit: pw.BoxFit.cover),
-                  ),
-                ),
-                pw.SizedBox(height: 16),
-              ],
-
-              sectionTitle("Informazioni generali"),
-              buildRow("ID", article.id),
-              buildRow("Caricato il", article.uploadedAt),
-              buildRow("URL Blob", article.blobUrl),
-
-              sectionTitle("Metadati Manuali"),
-              buildRow("Autore", article.author),
-              buildRow("Descrizione", article.description),
-              buildRow("Categoria", article.category.join(", ")),
-              buildRow("Tags", article.tags.join(", ")),
-
-              sectionTitle("Analisi IA"),
-              buildRow("Sottotitolo", article.subtitle),
-              buildRow("Lingua", article.language),
-              buildRow("Parole chiave", article.keywords.join(", ")),
-              buildRow("Entità rilevate", article.entities.join(", ")),
-              pw.SizedBox(height: 8),
-              pw.Text("Riassunto", style: pw.TextStyle(font: tBold, fontSize: 12)),
-              pw.SizedBox(height: 4),
-              pw.Text(
-                article.summary.isNotEmpty ? article.summary : "-",
-                style: pw.TextStyle(font: tFont, fontSize: 12),
-              ),
-            ];
-          },
-        ),
-      );
-
-      // Conversione del documento in byte ed emissione del download
-      final bytes = await pdf.save();
-      final blob = html.Blob([bytes], 'application/pdf');
-      final url = html.Url.createObjectUrlFromBlob(blob);
-
-      html.AnchorElement(href: url)
-        ..setAttribute("download", "Metadati_${article.id}.pdf")
-        ..click();
-
-      html.Url.revokeObjectUrl(url);
-    } catch (e) {
-      if (!mounted) return;
-      print("Errore nella generazione del PDF: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Impossibile generare il PDF: $e"),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
+      }).toList(),
+    );
   }
-
-  Future<void> _scaricaDocumento() async {
-    final article = _article;
-    if (article == null) return;
-
-    try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/articles/${article.id}/download'),
-      );
-
-      if (response.statusCode != 200) {
-        throw Exception('Errore ${response.statusCode} durante il download');
-      }
-
-      final contentType = response.headers['content-type'] ?? 'application/octet-stream';
-
-      // Proviamo a recuperare il nome file dall'header Content-Disposition
-      // inviato dal backend; se manca, usiamo un fallback con l'id articolo.
-      String filename = 'articolo_${article.id}';
-      final disposition = response.headers['content-disposition'];
-      if (disposition != null) {
-        final match = RegExp(r'filename="?([^"]+)"?').firstMatch(disposition);
-        if (match != null && match.group(1) != null) {
-          filename = match.group(1)!;
-        }
-      }
-
-      final blob = html.Blob([response.bodyBytes], contentType);
-      final url = html.Url.createObjectUrlFromBlob(blob);
-
-      html.AnchorElement(href: url)
-        ..setAttribute("download", filename)
-        ..click();
-
-      html.Url.revokeObjectUrl(url);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Impossibile scaricare il documento: $e"),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
 }

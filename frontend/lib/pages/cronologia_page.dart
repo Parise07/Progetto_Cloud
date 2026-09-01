@@ -8,7 +8,9 @@ import '../api_config.dart';
 
 import 'package:http/http.dart' as http;
 
+import '../main.dart';
 import 'detail_page.dart';
+import 'info_page.dart';
 
 const Color coloreSfondo = Color(0xFFF4F6F8);
 const Color colorePrincipale = Color(0xFF7F5539);
@@ -34,7 +36,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
   void initState(){
     super.initState();
     _scrollController.addListener(_onScroll);
-    checkLoginStatus(); // controlla che l'utente è già loggato
+    _checkLoginStatus();
     _loadArticles();
   }
 
@@ -102,17 +104,6 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
   }
 
 
-  Future<void> checkLoginStatus() async{
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
-    if(accessToken == null){
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      });
-    }
-  }
 
   Future<void> _refreshArticles() async {
     setState(() {
@@ -122,12 +113,104 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
     });
     await _loadArticles();
   }
+  Future<void> _checkLoginStatus() async {
+    String? accessToken = SharedPreferenceManager.instance.getString('access');
+    if (mounted) {
+      setState(() {
+        _isLogin = accessToken != null;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: coloreSfondo,
+      endDrawer: Drawer(
+        backgroundColor: coloreSfondo,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: colorePrincipale,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Icon(
+                    Icons.newspaper,
+                    size: 48,
+                    color: coloreAccento,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'NewsArchive RAG',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Sistema di Archiviazione Notizie',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withAlpha(179),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
+            if (!_isLogin)
+              _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
+                await SharedPreferenceManager.clear();
+
+                setState(() {
+                  _isLogin=false;
+                });
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MyApp()),
+                );
+              })
+            else
+              _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                ).then((_) {
+                  _checkLoginStatus();
+                });
+              }),
+            const Divider(),
+            _buildDrawerItem(Icons.home_outlined, 'Home Page', '',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyApp()),
+              );
+            },),
+
+            _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
+              if(_isLogin){
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const  UploadScreen()),
+                );}else{
+                showErrorDialog("É necessario il login per poter caricare un articolo. Accedi o registrati");
+              }
+            },),
+            _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info Sistema',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+              );
+            },),
+          ],
+        ),
+      ),
 
       body: RefreshIndicator(
         color: coloreAccento,
@@ -201,6 +284,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
               ),
             ),
 
+
             if (_articles.isEmpty && _isLoading)
               const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator(color: coloreAccento)),
@@ -231,10 +315,11 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
   }
 
   Widget _buildTechCard(Articolo article) {
-    final String title = article.title ?? 'Senza titolo';
-    final String author = article.author ?? 'Autore sconosciuto';
-    final String coverUrl = article.coverUrl ?? '';
-    final List<String> category = article.category ?? [];
+    final String title = article.title ;
+    final String author = article.author ;
+    final String description = article.description ;
+    final String coverUrl = article.coverUrl ;
+    final List<String> category = article.category;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -306,7 +391,18 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        article.description,
+                        description,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorePrincipale.withAlpha(180),
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        author,
                         style: TextStyle(
                           fontSize: 13,
                           color: colorePrincipale.withAlpha(180),
@@ -332,7 +428,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
                         color: coloreAccento,
                       ),
                       onPressed: () {
-
+                        _mostraModificaDialog(article);
                         _searchController.clear();
                         _refreshArticles();
                       },
@@ -402,7 +498,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
       setState(() => _isLoading = true);
 
       try {
-        String url = '${ApiConfig.baseUrl}/articles/$articleId';
+        String url = '${ApiConfig.baseUrl}/articles/$articleId/delete';
         String? token = SharedPreferenceManager.instance.getString('access');
 
         final response = await http.delete(
@@ -417,13 +513,14 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Articolo eliminato con successo!'), backgroundColor: Colors.green),
             );
-            _refreshArticles(); 
+            _refreshArticles();
           }
         } else {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Errore durante l\'eliminazione: ${response.statusCode}'), backgroundColor: Colors.red),
             );
+            await _refreshArticles();
           }
         }
       } catch (e) {
@@ -432,5 +529,219 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _mostraModificaDialog(Articolo article) async {
+    final TextEditingController titleCtrl = TextEditingController(text: article.title);
+    final TextEditingController authorCtrl = TextEditingController(text: article.author);
+    final TextEditingController descCtrl = TextEditingController(text: article.description);
+    final TextEditingController customCatCtrl = TextEditingController();
+    final TextEditingController tagCtrl = TextEditingController();
+
+    List<String> editCategories = List.from(article.category);
+    List<String> editTags = List.from(article.tags);
+
+    bool isCustomCategory = false;
+    final List<String> defaultCategories = ['Politica', 'Economia', 'Tecnologia', 'Sport', 'Cultura', 'Scienza'];
+    bool isSaving = false;
+    bool? modificato = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              title: const Text('Modifica Articolo', style: TextStyle(color: colorePrincipale, fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: 600,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: titleCtrl,
+                        decoration: InputDecoration(labelText: 'Titolo', prefixIcon: const Icon(Icons.title, color: colorePrincipale)),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: authorCtrl,
+                        decoration: InputDecoration(labelText: 'Autore', prefixIcon: const Icon(Icons.person, color: colorePrincipale)),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: descCtrl,
+                        maxLines: 3,
+                        decoration: InputDecoration(labelText: 'Descrizione', prefixIcon: const Icon(Icons.description, color: colorePrincipale)),
+                      ),
+
+
+                      const SizedBox(height: 24),
+                      const Text('Categorie', style: TextStyle(fontWeight: FontWeight.bold, color: colorePrincipale)),
+                      const SizedBox(height: 8),
+                      if (editCategories.isNotEmpty)
+                        Wrap(
+                          spacing: 8, runSpacing: 8,
+                          children: editCategories.map((cat) => Chip(
+                            label: Text(cat, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                            backgroundColor: coloreAccento,
+                            deleteIconColor: Colors.white,
+                            onDeleted: () => setDialogState(() => editCategories.remove(cat)),
+                          )).toList(),
+                        ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: isCustomCategory
+                                ? TextField(
+                              controller: customCatCtrl,
+                              decoration: const InputDecoration(labelText: 'Scrivi e premi Invio', prefixIcon: Icon(Icons.edit, color: coloreAccento)),
+                              onSubmitted: (val) {
+                                if (val.trim().isNotEmpty && !editCategories.contains(val.trim())) {
+                                  setDialogState(() {
+                                    editCategories.add(val.trim());
+                                    customCatCtrl.clear();
+                                    isCustomCategory = false;
+                                  });
+                                }
+                              },
+                            )
+                                : DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Aggiungi categoria', prefixIcon: Icon(Icons.category)),
+                              items: [...defaultCategories, 'Altro...'].map((String category) {
+                                return DropdownMenuItem<String>(value: category, child: Text(category));
+                              }).toList(),
+                              onChanged: (String? newValue) {
+                                if (newValue == 'Altro...') {
+                                  setDialogState(() => isCustomCategory = true);
+                                } else if (newValue != null && !editCategories.contains(newValue)) {
+                                  setDialogState(() => editCategories.add(newValue));
+                                }
+                              },
+                            ),
+                          ),
+                          if (isCustomCategory)
+                            IconButton(
+                              icon: const Icon(Icons.close, color: colorePrincipale),
+                              onPressed: () => setDialogState(() {
+                                isCustomCategory = false;
+                                customCatCtrl.clear();
+                              }),
+                            )
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+
+                      const Text('Tags', style: TextStyle(fontWeight: FontWeight.bold, color: colorePrincipale)),
+                      const SizedBox(height: 8),
+                      if (editTags.isNotEmpty)
+                        Wrap(
+                          spacing: 8, runSpacing: 8,
+                          children: editTags.map((tag) => Chip(
+                            label: Text(tag, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                            backgroundColor: colorePrincipale.withAlpha(200),
+                            deleteIconColor: Colors.white,
+                            onDeleted: () => setDialogState(() => editTags.remove(tag)),
+                          )).toList(),
+                        ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: tagCtrl,
+                        decoration: const InputDecoration(labelText: 'Scrivi un tag e premi Invio', prefixIcon: Icon(Icons.local_offer)),
+                        onSubmitted: (val) {
+                          if (val.trim().isNotEmpty && !editTags.contains(val.trim())) {
+                            setDialogState(() {
+                              editTags.add(val.trim());
+                              tagCtrl.clear();
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.pop(context, false),
+                  child: const Text('Annulla', style: TextStyle(color: colorePrincipale)),
+                ),
+                ElevatedButton(
+                  onPressed: isSaving ? null : () async {
+                    setDialogState(() => isSaving = true);
+                    try {
+                      String url = '${ApiConfig.baseUrl}/articles/${article.id}/update';
+                      String? token = SharedPreferenceManager.instance.getString('access');
+                      Map<String, dynamic> updateData = {
+                        "title": titleCtrl.text,
+                        "author": authorCtrl.text,
+                        "description": descCtrl.text,
+                        "category": editCategories,
+                        "tags": editTags,
+                      };
+                      final response = await http.put(
+                        Uri.parse(url),
+                        headers: {
+                          'Content-Type': 'application/json',
+                          if (token != null) 'Authorization': 'Bearer $token',
+                        },
+                        body: jsonEncode(updateData),
+                      );
+                      if (response.statusCode == 200) {
+                        if (context.mounted) Navigator.pop(context, true);
+                      } else {
+                        debugPrint("Errore modifica: ${response.body}");
+                        setDialogState(() => isSaving = false);
+                      }
+                    } catch (e) {
+                      debugPrint("Eccezione durante modifica: $e");
+                      setDialogState(() => isSaving = false);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: coloreAccento),
+                  child: isSaving
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Salva Modifiche', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (modificato == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Articolo aggiornato con successo!'), backgroundColor: Colors.green),
+      );
+      await _refreshArticles();
+    }
+  }
+
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attenzione'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, String subtitle, VoidCallback onTapAction) {
+    return ListTile(
+      leading: Icon(icon, color: colorePrincipale),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      onTap: () {
+        Navigator.pop(context);
+        onTapAction();
+      },
+    );
   }
 }

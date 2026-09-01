@@ -37,6 +37,15 @@ class ArticleDocument(BaseModel):
         description="Metadati generati dall'IA"
     )
 
+class ArticleUpdateModel(BaseModel):
+    '''modello per la modifica di un articolo già esistente '''
+    title: Optional[str] = None
+    author: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[List[str]] = None
+    tags: Optional[List[str]] = None
+
+
 class EmbeddingDocument(BaseModel):
     chunk_id: str = Field(..., description="{article_id}-chunk-{index}")
     article_id: str = Field(..., description="UUID univoco dell'articolo")

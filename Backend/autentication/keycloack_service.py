@@ -68,15 +68,15 @@ def addUtente(username: str, email: str, password: str):
         new_user = {
             "username": username,
             "email": email,
-            "enabled": True,  # L'utente è subito attivo
-            "credentials": [{
-                "value": password,
-                "type": "password",
-                "temporary": False  # Non chiediamo il cambio password al primo login
-            }]
+            "firstName": username,
+            "lastName": "User",
+            "enabled": True,
+            "emailVerified": True,
+
         }
         # Chiamata al server Keycloak tramite l'oggetto admin
         user_id = keycloak_admin.create_user(new_user)
+        keycloak_admin.set_user_password(user_id=user_id, password=password, temporary=False)
         print(f"Utente {username} creato con successo in Keycloak. ID: {user_id}")
         return user_id
 
@@ -98,3 +98,5 @@ def login_user(username: str, password: str):
     except KeycloakError as e:
         print(f"Errore di login su Keycloak: {e}")
         raise HTTPException(status_code=401, detail="Username o password non validi")
+
+

@@ -1,8 +1,13 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:frontend/pages/cronologia_page.dart';
 import 'package:http/http.dart' as http;
+import 'package:desktop_drop/desktop_drop.dart';
 import '../api_config.dart';
+import '../main.dart';
 import '../shared_preferences.dart';
+import 'info_page.dart';
+import 'login_page.dart';
 
 // --- COLORI DESIGN SYSTEM 60-30-10 ---
 const Color coloreSfondo = Color(0xFFF4F6F8);
@@ -28,13 +33,23 @@ class _UploadScreenState extends State<UploadScreen> {
 
   final List<String> _defaultCategories = ['Politica', 'Economia', 'Tecnologia', 'Sport', 'Cultura', 'Scienza'];
   bool _isCustomCategory = false;
-
+  bool _isLogin= false;
 
   String? _documentFileName;
   String? _coverFileName;
 
   PlatformFile? _documentFile;
   PlatformFile? _coverFile;
+
+  bool _isDraggingDoc = false;
+  bool _isDraggingCover = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -45,10 +60,104 @@ class _UploadScreenState extends State<UploadScreen> {
     super.dispose();
   }
 
+  Future<void> _checkLoginStatus() async {
+    String? accessToken = SharedPreferenceManager.instance.getString('access');
+    if (mounted) {
+      setState(() {
+        _isLogin = accessToken != null;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: coloreSfondo,
+      endDrawer: Drawer(
+        backgroundColor: coloreSfondo,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: colorePrincipale,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Icon(
+                    Icons.newspaper,
+                    size: 48,
+                    color: coloreAccento,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'NewsArchive RAG',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Sistema di Archiviazione Notizie',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withAlpha(179),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            if (!_isLogin)
+              _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
+                await SharedPreferenceManager.clear();
+
+                setState(() {
+                  _isLogin=false;
+                });
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                );
+              })
+            else
+              _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                ).then((_) {
+                  _checkLoginStatus();
+                });
+              }),
+            const Divider(),
+            _buildDrawerItem(Icons.home_outlined, 'Home Page', '',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyApp()),
+              );
+            },),
+            _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
+              if (_isLogin) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                );
+              } else{
+                showErrorDialog("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
+              }
+            },),
+            _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info Sistema',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+              );
+            },),
+          ],
+        ),
+      ),
       body: CustomScrollView(
         slivers: [
 
@@ -150,13 +259,21 @@ class _UploadScreenState extends State<UploadScreen> {
         children: [
           _buildFilePickerRow(
             icon: Icons.description,
-            title: "Documento (.txt, .pdf, .docx)",
+            title: "Documento (.txt, .pdf, .docx, .md)",
             fileName: _documentFileName,
+            isDragging: _isDraggingDoc,
+            onDragStateChanged: (dragging) => setState(() => _isDraggingDoc = dragging),
+            onFileDropped: (droppedFile) {
+              setState(() {
+                _documentFile = droppedFile;
+                _documentFileName = droppedFile.name;
+              });
+            },
             onTap: () async {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 type: FileType.custom,
-                allowedExtensions: ['txt', 'pdf', 'docx'],
-                withData: true, // <-- FONDAMENTALE PER IL WEB: carica i bytes in memoria
+                allowedExtensions: ['txt', 'pdf', 'docx', 'md'],
+                withData: true,
               );
               if (result != null) {
                 setState(() {
@@ -165,12 +282,26 @@ class _UploadScreenState extends State<UploadScreen> {
                 });
               }
             },
+            onClear: () {
+              setState(() {
+                _documentFile = null;
+                _documentFileName = null;
+              });
+            },
           ),
           const Padding(padding: EdgeInsets.symmetric(vertical: 12.0), child: Divider()),
           _buildFilePickerRow(
             icon: Icons.image,
             title: "Copertina (.png, .jpg) - Opzionale",
             fileName: _coverFileName,
+            isDragging: _isDraggingCover,
+            onDragStateChanged: (dragging) => setState(() => _isDraggingCover = dragging),
+            onFileDropped: (droppedFile) {
+              setState(() {
+                _coverFile = droppedFile;
+                _coverFileName = droppedFile.name;
+              });
+            },
             onTap: () async {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 type: FileType.image,
@@ -183,50 +314,94 @@ class _UploadScreenState extends State<UploadScreen> {
                 });
               }
             },
+            onClear: () {
+              setState(() {
+                _coverFile = null;
+                _coverFileName = null;
+              });
+            },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFilePickerRow({required IconData icon, required String title, String? fileName, required VoidCallback onTap}) {
+  Widget _buildFilePickerRow({
+    required IconData icon,
+    required String title,
+    String? fileName,
+    required VoidCallback onTap,
+    required Function(PlatformFile) onFileDropped,
+    required bool isDragging,
+    required Function(bool) onDragStateChanged,
+    required VoidCallback onClear, // <-- NUOVO PARAMETRO
+  }) {
     bool hasFile = fileName != null;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: hasFile ? coloreAccento.withAlpha(30) : coloreSfondo,
-                borderRadius: BorderRadius.circular(12),
+    return DropTarget(
+      onDragEntered: (details) => onDragStateChanged(true),
+      onDragExited: (details) => onDragStateChanged(false),
+      onDragDone: (details) async {
+        onDragStateChanged(false);
+        if (details.files.isNotEmpty) {
+          final xFile = details.files.first;
+          final bytes = await xFile.readAsBytes();
+          final platformFile = PlatformFile(name: xFile.name, size: bytes.length, bytes: bytes);
+          onFileDropped(platformFile);
+        }
+      },
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isDragging ? coloreAccento.withAlpha(20) : Colors.white.withAlpha(1),
+            borderRadius: BorderRadius.circular(8),
+            border: isDragging
+                ? Border.all(color: coloreAccento, width: 2)
+                : Border.all(color: Colors.transparent, width: 2),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: hasFile ? coloreAccento.withAlpha(30) : coloreSfondo,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: hasFile ? coloreAccento : colorePrincipale, size: 28),
               ),
-              child: Icon(icon, color: hasFile ? coloreAccento : colorePrincipale, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: colorePrincipale)),
-                  const SizedBox(height: 4),
-                  Text(
-                    hasFile ? fileName : "Nessun file selezionato",
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: hasFile ? coloreAccento : colorePrincipale.withAlpha(150),
-                      fontWeight: hasFile ? FontWeight.w600 : FontWeight.normal,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: colorePrincipale)),
+                    const SizedBox(height: 4),
+                    Text(
+                      hasFile ? fileName : "Clicca o trascina qui il file",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: hasFile ? coloreAccento : colorePrincipale.withAlpha(150),
+                        fontWeight: hasFile ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Icon(hasFile ? Icons.check_circle : Icons.add_circle_outline, color: hasFile ? Colors.green : colorePrincipale.withAlpha(100))
-          ],
+              // FIX: SE C'È UN FILE MOSTRA LA 'X' ROSSA, ALTRIMENTI L'ICONA DI UPLOAD
+              if (hasFile)
+                IconButton(
+                  icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 28),
+                  onPressed: onClear, // <-- Azzera il file selezionato!
+                  tooltip: 'Rimuovi file',
+                )
+              else
+                Icon(Icons.cloud_upload_outlined, color: colorePrincipale.withAlpha(100), size: 28)
+            ],
+          ),
         ),
       ),
     );
@@ -404,7 +579,6 @@ class _UploadScreenState extends State<UploadScreen> {
               request.fields['author'] = _authorController.text;
               request.fields['description'] = _descriptionController.text;
 
-
               for (String cat in _selectedCategories) {
                 request.files.add(http.MultipartFile.fromString('category', cat));
               }
@@ -412,7 +586,6 @@ class _UploadScreenState extends State<UploadScreen> {
               for (String tag in _selectedTags) {
                 request.files.add(http.MultipartFile.fromString('tags', tag));
               }
-
 
               if (_documentFile != null && _documentFile!.bytes != null) {
                 request.files.add(http.MultipartFile.fromBytes(
@@ -437,6 +610,13 @@ class _UploadScreenState extends State<UploadScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Articolo caricato con successo!'), backgroundColor: Colors.green),
                 );
+                if (mounted) {
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(builder: (context) => const MyApp()),
+                        (route) => false,
+                  );
+                }
               } else {
                 debugPrint("Errore: ${response.body}");
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -461,6 +641,30 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
         ),
       ),
+    );
+  }
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attenzione'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, String subtitle, VoidCallback onTapAction) {
+    return ListTile(
+      leading: Icon(icon, color: colorePrincipale),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      onTap: () {
+        Navigator.pop(context);
+        onTapAction();
+      },
     );
   }
 }

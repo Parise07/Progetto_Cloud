@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException,status
-from app.services.cosmos_service import search_by_keywords
-from app.models.chunk import RagSearchQuery, GenericSearchQuery
-from app.services.ai_service import generate_embedding_for_chunks, generate_rag_aswer
+from app.services.cosmos_service import search_by_keywords, get_article_by_id
+from app.models.chunk import RagSearchQuery, GenericSearchQuery, ArticleChatQuery
+from app.services.ai_service import generate_embedding_for_chunks, generate_rag_answer, generate_chat_answer
 from app.services.search_service import search_relevant_chunks
 
 router = APIRouter(prefix="/search", tags=["Search"])
@@ -12,11 +12,10 @@ router = APIRouter(prefix="/search", tags=["Search"])
 async def search_rag_articles(query: RagSearchQuery):
     if query.question is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    # 1 embedding della query
+
     query_embedding = await  generate_embedding_for_chunks([query.question])
     question = query_embedding[0]
 
-    #2 estraiamo i chunk rilevanti
     relevant_chunks = await  search_relevant_chunks(question)
     if not relevant_chunks:
         return {
@@ -24,12 +23,20 @@ async def search_rag_articles(query: RagSearchQuery):
             "answer": "Non ho trovato documenti pertinenti alla tua domanda nel nostro archivio.",
             "relevant_chunks": []
         }
-    answer= await generate_rag_aswer(relevant_chunks = relevant_chunks, question = query.question)
+    answer= await generate_rag_answer(relevant_chunks = relevant_chunks, question = query.question)
+
+    article_ids = list(set([chunk.get("article_id") for chunk in relevant_chunks if chunk.get("article_id")]))
+
+    full_articles = []
+    for a_id in article_ids:
+        article_doc = get_article_by_id(a_id)
+        if article_doc:
+            full_articles.append(article_doc)
 
     return {
         "question": query.question,
         "answer": answer,
-        "relevant_chunks": relevant_chunks
+        "relevant_chunks": full_articles
     }
 
 @router.post("/generic")
@@ -47,4 +54,21 @@ async def search_generic_articles(query: GenericSearchQuery):
         "keywords": query.keyword,
         "message": f"Trovate {len(results)} corrispondenze ",
         "results": results
+    }
+
+@router.post("/article-chat")
+async def chat_articles(query: ArticleChatQuery):
+    if not query.question:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    query_embedding = await generate_embedding_for_chunks([query.question])
+    question = query_embedding[0]
+    relevant_chunks = await search_relevant_chunks(question)
+    if not relevant_chunks:
+        return {
+            "answer": "Non ho trovato altri riferimenti nel database per aiutarti con questa domanda."
+        }
+    answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_id = query.current_article_id)
+    return {
+        "answer": answer
     }

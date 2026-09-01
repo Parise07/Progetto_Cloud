@@ -1,17 +1,157 @@
 import 'package:flutter/material.dart';
+import 'package:frontend/main.dart';
+import 'package:frontend/pages/upload_page.dart';
+
+import '../shared_preferences.dart';
+import 'cronologia_page.dart';
+import 'login_page.dart';
 
 // Importa i colori (puoi anche metterli in un file theme.dart separato)
 const Color coloreSfondo = Color(0xFFF4F6F8);
 const Color colorePrincipale = Color(0xFF7F5539);
 const Color coloreAccento = Color(0xFFFF6B35);
 
-class InformazioniScreen extends StatelessWidget {
+class InformazioniScreen extends StatefulWidget {
   const InformazioniScreen({super.key});
+
+  @override
+  State<InformazioniScreen> createState() => _InformazioniScreenState();
+}
+
+class _InformazioniScreenState extends State<InformazioniScreen> {
+  bool _isLogin = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    String? token = SharedPreferenceManager.instance.getString('access');
+    setState(() {
+      _isLogin = token != null;
+    });
+  }
+
+  void showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Attenzione'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(IconData icon, String title, String subtitle, VoidCallback onTapAction) {
+    return ListTile(
+      leading: Icon(icon, color: colorePrincipale),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      onTap: () {
+        Navigator.pop(context);
+        onTapAction();
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: coloreSfondo,
+      // Menù a tendina Laterale
+      endDrawer: Drawer(
+        backgroundColor: coloreSfondo,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: colorePrincipale,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Icon(
+                    Icons.newspaper,
+                    size: 48,
+                    color: coloreAccento,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'NewsArchive RAG',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    'Sistema di Archiviazione Notizie',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white.withAlpha(179),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            if (!_isLogin)
+              _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
+                await SharedPreferenceManager.clear();
+
+                setState(() {
+                  _isLogin=false;
+                });
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MyApp()),
+                );
+              })
+            else
+              _buildDrawerItem(Icons.login, 'Log-in', 'Accedi con Keycloak', () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                ).then((_) {
+                  _checkLoginStatus();
+                });
+              }),
+            const Divider(),
+            _buildDrawerItem(Icons.home_outlined, 'Home Page', '',() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyApp()),
+              );
+            },),
+            _buildDrawerItem(Icons.history, 'Cronologia', 'Articoli visti di recente',() {
+              if (_isLogin) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                );
+              } else{
+                showErrorDialog("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
+              }
+            },),
+            _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
+              if(_isLogin){
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const  UploadScreen()),
+                );}else{
+                showErrorDialog("É necessario il login per poter caricare un articolo. Accedi o registrati");
+              }
+            },),
+          ],
+        ),
+      ),
       body: CustomScrollView(
         slivers: [
           // --- App Bar Animata ---
