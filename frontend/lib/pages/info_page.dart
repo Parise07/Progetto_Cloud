@@ -102,7 +102,7 @@ class _InformazioniScreenState extends State<InformazioniScreen> {
               ),
             ),
 
-            if (!_isLogin)
+            if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
                 await SharedPreferenceManager.clear();
 

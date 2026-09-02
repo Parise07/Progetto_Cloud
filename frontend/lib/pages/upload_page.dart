@@ -111,7 +111,7 @@ class _UploadScreenState extends State<UploadScreen> {
               ),
             ),
 
-            if (!_isLogin)
+            if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
                 await SharedPreferenceManager.clear();
 

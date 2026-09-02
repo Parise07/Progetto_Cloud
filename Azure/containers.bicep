@@ -83,8 +83,8 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
       {
         name: 'keycloak-iam'
         properties: {
-          // L'immagine ufficiale di Keycloak
-          image: 'quay.io/keycloak/keycloak:24.0.2'
+          // IL TUO CONTAINER PERSONALIZZATO DA DOCKER HUB!
+          image: 'parise09/newsarchive-keycloak:latest' 
           command: ['/opt/keycloak/bin/kc.sh', 'start-dev']
           ports: [{ port: 8080 }]
           resources: {

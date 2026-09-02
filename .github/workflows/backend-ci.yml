@@ -9,6 +9,7 @@ on:
     paths:
       - 'Backend/**' # Assicurati che questo sia il nome esatto della tua cartella backend
 
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest # GitHub ci presta un server Linux gratuito

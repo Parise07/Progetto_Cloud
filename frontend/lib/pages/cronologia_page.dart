@@ -164,7 +164,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
               ),
             ),
 
-            if (!_isLogin)
+            if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
                 await SharedPreferenceManager.clear();
 

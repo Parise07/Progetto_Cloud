@@ -1,12 +1,16 @@
-# Procedura per deploiare il backend 
+# Procedura per deployare il backend
 
-Prima di iniziare la procedura stare attenti ai nomi e ai comandi bash, pochè avendo particolari (lettere maiuscole e punti) potrebbero essere causa di eventuali crash nella procedura.
-## Fase 1
+Prima di iniziare la procedura, fare attenzione ai nomi e ai comandi bash, poiché caratteri particolari (lettere maiuscole e punti) potrebbero causare crash nella procedura.
 
-### Creare il Dockerfile 
-All'interno della cartella principale del tuo backend (esattamente dove si trova il file requirements.txt), crea un nuovo file e chiamalo Dockerfile (con la D maiuscola e senza alcuna estensione come .txt o .py).
+## Fase 1 — Containerizzazione con Docker
+
+### Creare il Dockerfile
+
+All'interno della cartella principale del tuo backend (esattamente dove si trova il file `requirements.txt`), crea un nuovo file e chiamalo `Dockerfile` (con la D maiuscola e senza alcuna estensione come `.txt` o `.py`).
+
 Copia e incolla questo contenuto al suo interno:
-```
+
+```dockerfile
 # 1. Usa l'immagine ufficiale di Python basata su un sistema Linux leggero
 FROM python:3.10-slim
 
@@ -28,9 +32,13 @@ EXPOSE 8000
 # 7. Comando di avvio del server FastAPI
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
-# Crea il file .dockerignore
-Nella stessa cartella, crea un altro file chiamato `.dockerignore` (nota il punto iniziale). Questo file è cruciale per evitare che i tuoi segreti (come il file .env) o la cartella dell'ambiente virtuale (venv) vengano copiati per sbaglio all'interno dell'immagine pubblica.
+
+### Creare il file .dockerignore
+
+Nella stessa cartella, crea un altro file chiamato `.dockerignore` (nota il punto iniziale). Questo file è cruciale per evitare che i tuoi segreti (come il file `.env`) o la cartella dell'ambiente virtuale (`venv`) vengano copiati per sbaglio all'interno dell'immagine pubblica.
+
 Incolla questo contenuto:
+
 ```
 venv/
 .env
@@ -40,32 +48,45 @@ __pycache__/
 .vscode/
 .idea/
 ```
-# Costruisci l'immagine (Build)
-Ora che i file esistono, apri il terminale nella cartella del backend (assicurandoti che Docker Desktop sia aperto) e lancia il comando per costruire l'immagine. Sostituisci tuousername con il tuo reale username di Docker Hub:
-```
+
+### Costruire l'immagine (Build)
+
+Ora che i file esistono, apri il terminale nella cartella del backend (assicurandoti che Docker Desktop sia aperto) e lancia il comando per costruire l'immagine. Sostituisci `tuousername` con il tuo reale username di Docker Hub:
+
+```bash
 docker build -t tuousername/newsarchive-backend:latest .
 ```
-# Testa il container in locale 
-Avvia il container appena creato passando il file .env in modo che il codice Python abbia accesso ai database:
-```
+
+### Testare il container in locale
+
+Avvia il container appena creato passando il file `.env` in modo che il codice Python abbia accesso ai database:
+
+```bash
 docker run -p 8000:8000 --env-file .env tuousername/newsarchive-backend:latest
 ```
-Se vedi i log di Uvicorn che partono, tutto funziona! Ferma il server premendo CTRL+C nel terminale.
-# Pubblichiamo su Docker Hub (Push)
+
+Se vedi i log di Uvicorn che partono, tutto funziona! Ferma il server premendo `CTRL+C` nel terminale.
+
+### Pubblicare su Docker Hub (Push)
+
 Ora carichiamo l'immagine sul cloud in modo che Azure possa scaricarla successivamente. Accedi al tuo account da terminale ed effettua il push:
-```
+
+```bash
 docker login
 docker push tuousername/newsarchive-backend:latest
 ```
-## Fase 2 
 
-# Creazione del file Bicep per i container 
-Nella cartella dove tieni i tuoi file infrastrutturali (dove hai main.bicep), crea un nuovo file chiamato containers.bicep.
+## Fase 2 — Infrastruttura su Azure (Bicep)
+
+### Creazione del file Bicep per i container
+
+Nella cartella dove tieni i tuoi file infrastrutturali (dove hai `main.bicep`), crea un nuovo file chiamato `containers.bicep`.
 
 Questo script creerà un Azure Container Group. La genialità di questa risorsa è che permette di far girare sia il tuo Backend che Keycloak all'interno della stessa macchina logica, condividendo lo stesso indirizzo IP pubblico ma esponendo porte diverse (8000 e 8080).
 
 Incolla questo codice al suo interno:
-```
+
+```bicep
 @description('Location delle risorse (es. italynorth)')
 param location string = resourceGroup().location
 
@@ -87,6 +108,8 @@ param searchKey string
 param openAiEndpoint string
 @secure()
 param openAiKey string
+@secure()
+param keycloakAdminPassword string
 
 resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
   name: 'newsarchive-containers'
@@ -137,7 +160,7 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
           }
           environmentVariables: [
             { name: 'KEYCLOAK_ADMIN', value: 'admin' }
-            { name: 'KEYCLOAK_ADMIN_PASSWORD', secureValue: 'Admin123!' }
+            { name: 'KEYCLOAK_ADMIN_PASSWORD', secureValue: keycloakAdminPassword }
           ]
         }
       }
@@ -148,9 +171,14 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
 // Questo ti stamperà il link finale a cui collegare la tua app Flutter
 output fqdn string = containerGroup.properties.ipAddress.fqdn
 ```
-## Prepara il file dei parametri
-Dato che hai molte chiavi segrete, lanciarle tutte tramite riga di comando è scomodo. Crea un file chiamato containers.parameters.json nella stessa cartella e compila i campi vuoti copiandoli dal tuo file .env:
-```
+
+> **Nota:** nella versione originale la password di Keycloak (`Admin123!`) era scritta come valore letterale direttamente nel file `.bicep`. Anche se marcata `secureValue`, un letterale nel codice sorgente finisce comunque nel repository. È stata trasformata in un parametro `@secure()` (`keycloakAdminPassword`) da valorizzare solo nel file dei parametri, coerentemente con le altre chiavi segrete.
+
+### Preparare il file dei parametri
+
+Dato che hai molte chiavi segrete, lanciarle tutte tramite riga di comando è scomodo. Crea un file chiamato `containers.parameters.json` nella stessa cartella e compila i campi vuoti copiandoli dal tuo file `.env`:
+
+```json
 {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
@@ -161,12 +189,73 @@ Dato che hai molte chiavi segrete, lanciarle tutte tramite riga di comando è sc
     "searchEndpoint": { "value": "INCOLLA_QUI_IL_VALORE" },
     "searchKey": { "value": "INCOLLA_QUI_IL_VALORE" },
     "openAiEndpoint": { "value": "INCOLLA_QUI_IL_VALORE" },
-    "openAiKey": { "value": "INCOLLA_QUI_IL_VALORE" }
+    "openAiKey": { "value": "INCOLLA_QUI_IL_VALORE" },
+    "keycloakAdminPassword": { "value": "INCOLLA_QUI_IL_VALORE" }
   }
 }
 ```
-# Passiamo ad eseguirlo su Azure 
-Apri il terminale ed esegui il comando per avviare la creazione dei tuoi container sul cloud. (Assicurati di usare il nome corretto del tuo Resource Group, suppongo progettocloud-rg):
-```
+
+### Eseguire il deployment su Azure
+
+Apri il terminale ed esegui il comando per avviare la creazione dei tuoi container sul cloud. (Assicurati di usare il nome corretto del tuo Resource Group, ad es. `progettocloud-rg`):
+
+```bash
 az deployment group create --resource-group progettocloud-rg --template-file containers.bicep --parameters containers.parameters.json
 ```
+
+## Fase 3 — Automazione CI/CD (GitHub Actions)
+
+Per automatizzare la creazione dell'immagine a ogni push:
+
+Su GitHub, in **Settings > Secrets and variables > Actions**, creare:
+
+- `DOCKER_USERNAME` (es. `tuousername`)
+- `DOCKER_PASSWORD` (password di Docker Hub)
+
+Nel progetto locale, creare il file `.github/workflows/backend-ci.yml`:
+
+```yaml
+name: Backend CI - Build & Push Docker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Backend/**' # La pipeline parte solo se si modifica il backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout del codice
+        uses: actions/checkout@v3
+
+      - name: 🔑 Login su Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🐳 Build e Push dell'immagine
+        uses: docker/build-push-action@v4
+        with:
+          context: ./Backend
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/newsarchive-backend:latest
+```
+
+> **Nota:** nel tag dell'immagine è preferibile usare `${{ secrets.DOCKER_USERNAME }}` invece del segnaposto letterale `<tuousername>`, altrimenti il workflow tenta di pushare verso un repository inesistente.
+
+## Fase 4 — Post-Deploy (Keycloak e Frontend)
+
+### Inizializzare Keycloak in Cloud
+
+1. Aprire l'indirizzo pubblico fornito da Azure sulla porta `:8080` (es. `http://newsarchive-api-xxx.italynorth.azurecontainer.io:8080/admin`).
+2. Accedere con `admin` / `admin` (o con la password impostata tramite `keycloakAdminPassword`).
+3. Ricreare il Realm (`prog-cloud`), il Client (`web-app-cloud` con *Direct access grants* attivo) e l'utente di test.
+
+### Collegare il Frontend (Flutter)
+
+1. Aggiornare `ApiConfig.baseUrl` con l'indirizzo pubblico sulla porta `:8000`.
+2. Nel file `AndroidManifest.xml`, assicurarsi di aver inserito `android:usesCleartextTraffic="true"` per consentire il traffico HTTP verso Azure.
