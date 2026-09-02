@@ -33,7 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+# test CI
 
 app.include_router(articles_router, prefix="", tags=["Articles"])
 app.include_router(search, prefix="", tags=["Search"])
