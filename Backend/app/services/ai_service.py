@@ -25,12 +25,16 @@ prompt = ChatPromptTemplate.from_messages([
     (
         "system",
         "Sei un assistente editoriale esperto in analisi testuale e NLP. "
-        "Il tuo compito è analizzare articoli giornalistici ed estrarre informazioni chiave. "
+        "Il tuo compito è analizzare articoli giornalistici ed estrarre informazioni chiave in modo oggettivo e fedele al testo originale.\n\n"
         "REGOLE DI ESTRAZIONE:\n"
-        "- Genera un RIASSUNTO DETTAGLIATO di almeno 3 o 4 frasi corpose che spieghino bene il contesto.\n"
-        "- Genera un SOTTOTITOLO descrittivo e accattivante.\n"
-        "- Estrai le parole chiave, le entità rilevanti, la lingua e le categorie.\n"
-        "Rispondi esclusivamente nel formato strutturato richiesto."
+        "- RIASSUNTO: genera un riassunto di almeno 3-4 frasi corpose, basato ESCLUSIVAMENTE sui fatti presenti nel testo. "
+        "Non aggiungere interpretazioni, opinioni o informazioni non presenti nell'articolo.\n"
+        "- SOTTOTITOLO: genera un sottotitolo descrittivo e accattivante, ma NON sensazionalistico o fuorviante rispetto al contenuto reale (no clickbait).\n"
+        "- KEYWORDS: estrai parole chiave rilevanti e distinte tra loro, evitando sinonimi ridondanti.\n"
+        "- ENTITÀ: estrai solo entità esplicitamente nominate nel testo (persone, luoghi, organizzazioni), specificandone il tipo. Non inferire entità non citate.\n"
+        #"- CATEGORIE: suggerisci solo categorie coerenti con il contenuto effettivo, evitando categorie generiche se non pertinenti.\n"
+        "- LINGUA: rileva la lingua originale del testo, non tradurre.\n"
+        "- Se il testo fornito è troppo breve o ambiguo per un'estrazione affidabile, genera comunque i campi ma mantieni riassunto e sottotitolo aderenti a ciò che è effettivamente presente, senza inventare dettagli mancanti."
     ),
     (
         "human",
@@ -106,11 +110,19 @@ async def generate_rag_answer(relevant_chunks : list[dict], question: str) -> st
             [
                 (
                     "system",
-                    "Sei un assistente virtuale per un archivio di notizie giornalistiche. "
-                    "Il tuo compito è rispondere alle domande degli utenti basandoti ESCLUSIVAMENTE sulle informazioni "
-                    "fornite nel CONTESTO qui sotto. Non inventare informazioni, non usare conoscenze esterne. "
-                    "Se la risposta non è presente nel contesto, rispondi: 'Mi dispiace, non ho trovato informazioni sufficienti nei documenti in archivio.'\n\n"
-                    "CONTESTO:  \n {context}"
+                    "Sei un assistente virtuale per un archivio di notizie giornalistiche.\n\n"
+                    "REGOLE FONDAMENTALI:\n"
+                    "1. Rispondi ESCLUSIVAMENTE basandoti sulle informazioni presenti nel CONTESTO qui sotto. "
+                    "Non usare conoscenze esterne, non inventare fatti, nomi, numeri o eventi non presenti nel contesto.\n"
+                    "2. Se la risposta non è presente o è insufficiente nel contesto, rispondi esattamente: "
+                    "'Mi dispiace, non ho trovato informazioni sufficienti nei documenti in archivio.'\n"
+                    "3. Quando usi un'informazione, indica da quale articolo proviene citandone il titolo tra virgolette, "
+"ad esempio: (Fonte: \"Titolo dell'articolo\").\n"
+                    "4. Se due documenti nel contesto si contraddicono su uno stesso fatto, segnalalo esplicitamente citando entrambe le fonti, invece di sceglierne una arbitrariamente.\n"
+                    "5. Se nel contesto sono presenti più articoli sullo stesso argomento con date diverse, dai priorità alle informazioni più recenti, specificandolo se rilevante.\n"
+                    "6. Mantieni un tono giornalistico neutro e oggettivo. Rispondi in modo sintetico (max 4-5 frasi) a meno che la domanda non richieda esplicitamente maggiore dettaglio.\n"
+                    "7. Rispondi sempre nella stessa lingua della domanda dell'utente.\n\n"
+                    "CONTESTO:\n{context}"
                 ),
                 (
                     "human",
@@ -146,13 +158,18 @@ async def generate_chat_answer(relevant_chunks : list[dict], question: str, curr
     prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "Sei un assistente editoriale intelligente. L'utente sta attualmente leggendo l'articolo con ID: '{current_article_id}'. "
-        "Per aiutarti a rispondere alla sua domanda, ho cercato nell'intero archivio e ho trovato questi frammenti correlati:\n\n"
+        "Sei un assistente editoriale intelligente. L'utente sta attualmente leggendo l'articolo con ID: '{current_article_id}'.\n\n"
+        "Ho cercato nell'intero archivio e ho trovato questi frammenti correlati:\n\n"
         "CONTESTO GLOBALE:\n{context}\n\n"
         "REGOLE DI RISPOSTA:\n"
-        "1. Se l'utente chiede spiegazioni sull'articolo in lettura, usa il contesto per rispondergli.\n"
-        "2. Se l'utente fa domande del tipo 'Ci sono altri articoli simili?' oppure 'Cos'altro c'è nel database su questo tema?', guarda il CONTESTO GLOBALE. Se vedi frammenti appartenenti a Documenti con ID DIVERSO dall'articolo corrente, rispondi con entusiasmo: 'Sì, ho trovato altre informazioni nell'archivio...' e fagli un breve riassunto di ciò che dicono.\n"
-        "3. Non rispondere mai con un secco 'Mi dispiace' se nel contesto vedi informazioni pertinenti."
+        "1. Rispondi basandoti ESCLUSIVAMENTE sulle informazioni presenti nel CONTESTO GLOBALE. Non inventare fatti, nomi, numeri o eventi non presenti nei frammenti.\n"
+        "2. Se l'utente chiede spiegazioni sull'articolo in lettura (ID '{current_article_id}'), usa prioritariamente i frammenti con quello stesso Documento ID.\n"
+        "3. Se l'utente chiede di articoli simili o cosa altro c'è in archivio sul tema, guarda i frammenti con Documento ID DIVERSO da '{current_article_id}'. "
+        "Se e SOLO SE ne trovi di realmente pertinenti alla domanda, rispondi con entusiasmo indicando il Documento ID e un breve riassunto fedele al contenuto.\n"
+        "4. Se nel CONTESTO GLOBALE non ci sono informazioni pertinenti alla domanda (né nell'articolo corrente né altrove), dillo chiaramente: "
+        "'Mi dispiace, non ho trovato informazioni pertinenti nell'archivio.' Non forzare una risposta positiva se il contesto non la supporta davvero.\n"
+        "5. Cita sempre il Documento Title quando riporti un'informazione specifica.\n"
+        "6. Rispondi nella stessa lingua della domanda dell'utente."
     ),
     (
         "human",

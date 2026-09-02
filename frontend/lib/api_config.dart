@@ -1,3 +1,3 @@
 class ApiConfig {
-  static const String baseUrl = "http://localhost:8000";
+  static const String baseUrl = 'http://newsarchive-api-3vwgrko3onk6s.italynorth.azurecontainer.io:8000';
 }

@@ -1,0 +1,27 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "storageConnectionString": {
+            "value": "DefaultEndpointsProtocol=https;AccountName=pcloud3vwgrko3on;AccountKey=lAxTuXHNdcmDq0x5zXmL/NI+RPV1UPHGqNn6VPpk+k6gQN6PApSE3gIabO/WiYJwHJX7XFDyDd+m+AStO9oGxg==;EndpointSuffix=core.windows.net"
+        },
+        "cosmosEndpoint": {
+            "value": "https://pcloud-cosmos-3vwgrko3.documents.azure.com:443/"
+        },
+        "cosmosKey": {
+            "value": "CaVXbGVnGeWcwTJ31TgqyANIoi3WG72QvzfOPEAT4CP6GVf0ZMGhE6KYNtMkKYSnrICIoQQKxqN8ACDbUkASLQ=="
+        },
+        "searchEndpoint": {
+            "value": "https://pcloud-search-3vwgrko3.search.windows.net"
+        },
+        "searchKey": {
+            "value": "pDwxB7Wi3zxPXaClCL5xTY5TTddOs4DjCS1SVL7lefAzSeAjODLK"
+        },
+        "openAiEndpoint": {
+            "value": "https://pcloud-openai-3vwgrko3.openai.azure.com/"
+        },
+        "openAiKey": {
+            "value": "xE1zqNGJAIijShzc9q0srmXJfYs6bVA6rvQXZFbiPjq30BeSHpYqJQQJ99CHACgEuAYXJ3w3AAABACOGm5uZ"
+        }
+    }
+}

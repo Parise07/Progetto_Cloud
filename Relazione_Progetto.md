@@ -1,339 +1,578 @@
-# Relazione di Progetto: Sistema RAG per l'Archiviazione e Ricerca di Notizie
+# Relazione di Progetto: Sistema RAG per l'Archiviazione e Ricerca Intelligente di Notizie
+
+---
 
 ## 1. Introduzione e Obiettivi
 
 ### 1.1 Contesto
-Il presente documento descrive la progettazione e l'implementazione di un sistema cloud-native per la gestione di un archivio di notizie. In un contesto in cui il volume di informazioni cresce esponenzialmente, si rende necessario un sistema intelligente capace non solo di archiviare, ma anche di analizzare, indicizzare e ricercare contenuti testuali in modo efficiente.
 
-### 1.2 Requisiti di traccia
-Il sistema richiede la realizzazione di un'applicazione basata su piattaforma cloud in grado di gestire il caricamento di articoli testuali in formati standard (TXT, Markdown, JSON) e facoltativamente in formati complessi (DOCX, PDF). Una volta caricato, l'articolo necessita dell'estrazione del contenuto, della generazione automatica di metadati descrittivi e dell'indicizzazione per consentire sia ricerche tradizionali che interrogazioni in linguaggio naturale tramite l'integrazione di un sistema RAG (Retrieval-Augmented Generation). L'intera infrastruttura deve essere obbligatoriamente basata su Microsoft Azure.
+Il presente documento costituisce la relazione tecnica completa relativa alla progettazione e all'implementazione di un sistema cloud-native per la gestione di un archivio digitale di notizie giornalistiche. Il contesto applicativo si colloca nell'ambito della crescente necessità di sistemi informativi capaci di gestire volumi elevati di contenuti testuali non strutturati, fornendo meccanismi di accesso efficienti e semanticamente significativi. L'adozione di tecniche di intelligenza artificiale generativa per l'arricchimento automatico dei metadati e per la ricerca in linguaggio naturale rappresenta il contributo tecnologico centrale del progetto, declinato all'interno di un'architettura cloud completamente basata su Microsoft Azure.
 
-### 1.3 Obiettivi del sistema
-Gli obiettivi principali consistono nella realizzazione di un'architettura disaccoppiata (decoupled), scalabile e resiliente. Si mira a fornire un'interfaccia utente multipiattaforma accessibile, supportata da un backend robusto in grado di orchestrare pipeline di intelligenza artificiale avanzate per l'arricchimento semantico dei documenti e la successiva fase di retrieval.
+### 1.2 Requisiti di Traccia
+
+Il progetto richiede la realizzazione di un'applicazione cloud-native in grado di:
+
+- Gestire il caricamento di articoli testuali in formati standard (`TXT`, `Markdown`, `JSON`) e in formati documentali complessi (`DOCX`, `PDF`);
+- Estrarre automaticamente il contenuto testuale dai formati supportati;
+- Generare automaticamente metadati descrittivi di qualità editoriale tramite modelli linguistici di grandi dimensioni (LLM);
+- Indicizzare i contenuti per consentire sia ricerche tradizionali per parola chiave che interrogazioni in linguaggio naturale, attraverso l'integrazione di un sistema **RAG (Retrieval-Augmented Generation)**;
+- Basare l'intera infrastruttura computazionale e di persistenza su servizi **Microsoft Azure**.
+
+### 1.3 Obiettivi del Sistema
+
+Gli obiettivi principali del progetto consistono nella realizzazione di un'architettura **disaccoppiata** (*decoupled*), scalabile e resiliente. Si mira a fornire un'interfaccia utente multipiattaforma accessibile da browser e dispositivi desktop, supportata da un backend robusto in grado di orchestrare pipeline di intelligenza artificiale avanzate per l'arricchimento semantico dei documenti e la successiva fase di retrieval. La gestione delle identità utente è affidata a un Identity Provider certificato, in conformità con le best practice di sicurezza del settore.
+
+---
 
 ## 2. Architettura del Sistema
 
-### 2.1 Panoramica decoupled
-L'architettura proposta prevede una netta separazione delle responsabilità attraverso un approccio a tre layer: Frontend, Backend e Servizi Cloud. Questa modularità garantisce la possibilità di evolvere, scalare e manutenere i singoli componenti in maniera indipendente, limitando l'accoppiamento architetturale.
+### 2.1 Panoramica Decoupled
+
+L'architettura proposta prevede una netta separazione delle responsabilità attraverso un approccio a **tre layer**: **Frontend**, **Backend** e **Servizi Cloud**. Questa modularità garantisce la possibilità di evolvere, scalare e manutenere i singoli componenti in maniera indipendente, limitando l'accoppiamento architetturale e rendendo il sistema intrinsecamente resistente ai guasti localizzati.
+
+[RIFERIMENTO DIAGRAMMA ARCHITETTURA]
 
 ![Diagramma Architetturale](images_rel/architettura.png)
 
-### 2.2 Motivazioni dell'architettura multi-layer
-Si è optato per un'architettura multi-layer per massimizzare la flessibilità del sistema. Il frontend, operando come client autonomo, comunica tramite protocollo HTTP/REST (JSON) con il backend, il quale funge da orchestratore centrale della logica di business e delle pipeline di intelligenza artificiale. I servizi Azure sottostanti operano come layer di persistenza e computazione specializzata, accessibili esclusivamente tramite le API del backend, garantendo un controllo centralizzato sulla sicurezza e sui flussi di dati.
+I tre layer operano secondo il seguente schema di responsabilità:
+
+| Layer | Tecnologia | Responsabilità |
+|-------|-----------|----------------|
+| **Presentazione** | Flutter/Dart (Web/Desktop) | Interfaccia utente, rendering, gestione sessioni, comunicazione REST |
+| **Business Logic** | Python / FastAPI | Orchestrazione pipeline AI, CRUD articoli, autenticazione JWT, routing HTTP |
+| **Persistenza e AI** | Azure (Blob, Cosmos DB, AI Search, OpenAI) | Archiviazione, metadati, ricerca vettoriale, inferenza LLM |
+
+### 2.2 Motivazioni dell'Architettura Multi-Layer
+
+La scelta di un'architettura multi-layer è motivata dall'esigenza di massimizzare la flessibilità e la manutenibilità a lungo termine del sistema. Il Frontend, operando come client autonomo, comunica esclusivamente tramite protocollo **HTTP/REST** con payload **JSON** con il Backend, il quale funge da orchestratore centrale della logica di business e delle pipeline di intelligenza artificiale.
+
+I servizi Azure sottostanti operano come layer di persistenza e computazione specializzata, accessibili esclusivamente tramite le API del Backend. Questo approccio garantisce un controllo centralizzato su sicurezza, autorizzazioni e flussi di dati, impedendo l'accesso diretto del client alle risorse cloud — principale vettore di attacco nelle architetture mal progettate.
+
+[RIFERIMENTO DIAGRAMMA FLUSSO DATI API REST]
 
 ### 2.3 Gestione delle Identità e Sicurezza (Autenticazione)
-Per proteggere gli endpoint sensibili e differenziare l'utenza pubblica da quella autenticata, il sistema richiede un'infrastruttura di Identity and Access Management (IAM).
-In linea con le best practice di sicurezza cloud ("Don't roll your own crypto"), si è deciso di non implementare una soluzione custom, ma di delegare la gestione delle identità, delle password e dei token a un Identity Provider (IdP) certificato. A causa delle stringenti limitazioni sui permessi di amministrazione della directory imposti dalla sottoscrizione Azure for Students (che inibiscono la creazione di un tenant Azure Entra ID B2C), l'autenticazione è stata demandata a Keycloak. Questa scelta architetturale garantisce l'uso dei flussi standard OAuth2.0 / OpenID Connect, mantenendo il sistema sicuro, flessibile e pronto per un'eventuale federazione con altri provider in scenari di produzione reali, senza violare i vincoli infrastrutturali della traccia.
 
-## 3 Tecnologie e Strumenti
+Per proteggere gli endpoint sensibili e differenziare l'utenza pubblica da quella autenticata, il sistema richiede un'infrastruttura di **Identity and Access Management (IAM)** conforme agli standard industriali.
+
+In linea con il principio di sicurezza *"Don't roll your own crypto"*, si è optato per non implementare una soluzione di autenticazione custom basata su gestione diretta di password e chiavi crittografiche.
+
+**Motivazione della scelta di Keycloak**: La sottoscrizione *Azure for Students* dell'Università della Calabria impone restrizioni significative sui permessi di amministrazione della directory Azure Entra ID, inibendo la creazione di tenant **Azure Entra ID B2C**. Tali vincoli hanno condotto alla scelta di **Keycloak** come Identity Provider (IdP) open-source certificato. Questa soluzione garantisce:
+
+- L'utilizzo dei flussi standard **OAuth 2.0 / OpenID Connect (OIDC)**, consolidati e ampiamente validati dalla comunità di sicurezza;
+- La firma dei token JWT tramite algoritmo **RS256** (RSA con SHA-256), con chiavi pubbliche distribuite tramite endpoint **JWKS** standard;
+- La possibilità di federazione con ulteriori provider (Google, LDAP, SAML) in scenari di produzione futuri senza modifiche architetturali;
+- La piena conformità con i vincoli infrastrutturali della sottoscrizione accademica, senza compromettere il livello di sicurezza del sistema.
+
+---
+
+## 3. Tecnologie e Strumenti
 
 ### 3.1 Servizi Azure
 
 #### Azure Blob Storage
-Per l'archiviazione dei file originali (TXT, MD, JSON, DOCX, PDF) si è scelto Azure Blob Storage. L'adozione di tale servizio è motivata dalla sua natura di standard de-facto per l'object storage in ambiente Azure, in grado di offrire scalabilità virtualmente illimitata, elevata affidabilità e un'integrazione nativa con gli altri strati cloud.
 
-#### Azure Cosmos DB
-La gestione dei metadati, sia manuali che auto-generati, è affidata ad Azure Cosmos DB (API NoSQL). Essendo lo schema degli articoli fortemente eterogeneo e variabile nel tempo, l'adozione di un database documentale JSON-native risulta strutturalmente superiore a un approccio relazionale rigido. L'utilizzo in modalità Serverless è stato scelto per ottimizzare i costi operativi e garantire una risposta prestazionale istantanea per query sui metadati.
+Per l'archiviazione fisica dei file originali (`TXT`, `MD`, `JSON`, `DOCX`, `PDF`) e delle immagini di copertina è stato adottato **Azure Blob Storage**, organizzato in due container distinti:
+
+- `articles-raw`: contenitore dei file testuali originali;
+- Container dedicato alle immagini di copertina (configurabile tramite `AZURE_STORAGE_IMAGE_CONTAINER`).
+
+**Motivazione architetturale**: La separazione dell'archiviazione fisica dei file (Blob Storage) dai metadati strutturati (Cosmos DB) è una scelta progettuale deliberata. Azure Blob Storage è il servizio standard per l'*object storage* in ambiente Azure, ottimizzato per la gestione di file binari con scalabilità virtualmente illimitata e costi proporzionali all'utilizzo effettivo. Unificare file e metadati in un unico database avrebbe comportato inefficienze prestazionali e costi elevati per query sui metadati, che non richiedono il trasferimento del payload del file.
+
+#### Azure Cosmos DB (API NoSQL)
+
+La gestione dei metadati degli articoli è affidata ad **Azure Cosmos DB** in modalità API NoSQL, organizzato in due container:
+
+- **`articles`**: contenitore principale dei metadati, con `article_id` (UUID v4) come chiave di partizione;
+- **`chunks`**: contenitore dei frammenti testuali (*chunk*), con `chunk_id` (`{article_id}-chunk-{index}`) come chiave di partizione.
+
+**Motivazione architetturale**: Lo schema dei documenti di un archivio notizie è per natura **eterogeneo e variabile nel tempo**. Un database relazionale rigido costringerebbe a costose migrazioni dello schema a ogni evoluzione del modello dati. L'approccio **documentale JSON-native** di Cosmos DB è strutturalmente superiore in questo contesto: consente l'estensione dello schema senza migrazioni distruttive e si allinea perfettamente con la serializzazione JSON nativa di Pydantic. La modalità **Serverless** è stata selezionata per ottimizzare i costi operativi in un contesto a carico discontinuo tipico di una sottoscrizione accademica.
 
 #### Azure AI Search
-Per l'indicizzazione vettoriale dei frammenti di testo (chunk) e la ricerca semantica è stato adottato Azure AI Search. Tale componente unisce funzionalità di ricerca vettoriale (tramite algoritmi HNSW) e di ricerca full-text tradizionale (Hybrid Search) all'interno di un unico servizio gestito, eliminando la necessità di orchestrare database vettoriali di terze parti e abbassando la complessità operativa.
+
+Per l'indicizzazione vettoriale dei chunk testuali e la ricerca semantica ibrida è stato adottato **Azure AI Search**. Il servizio unifica in un'unica soluzione gestita:
+
+- **Ricerca vettoriale**: tramite algoritmo **HNSW** (*Hierarchical Navigable Small World*), per il recupero approssimato del vicinato su spazi ad alta dimensionalità (1536 dimensioni);
+- **Ricerca full-text tradizionale**: tramite algoritmo **BM25**, combinabile in modalità *Hybrid Search*.
+
+**Motivazione architetturale**: L'adozione di un unico servizio gestito elimina la necessità di orchestrare database vettoriali di terze parti (es. Pinecone, Weaviate, Qdrant), abbassando significativamente la complessità operativa. L'indice vettoriale viene creato automaticamente all'avvio del backend tramite `setup_ai_search_index()`, garantendo la riproducibilità dell'ambiente senza interventi manuali.
 
 #### Azure OpenAI Service
-L'integrazione dei modelli linguistici per la generazione dei metadati e il motore RAG si basa su Azure OpenAI Service. Si è adottato tale servizio per garantire conformità, bassa latenza e un'integrazione nativa e sicura all'interno dell'ecosistema cloud Azure. I modelli selezionati, `text-embedding-ada-002` per gli embedding e `gpt-4o-mini` per le operazioni di natural language processing, rappresentano lo stato dell'arte in termini di compromesso tra capacità elaborativa ed efficienza.
 
-A causa delle restrizioni della policy della sottoscrizione **Azure for Students** dell'Università della Calabria — che impone l'uso esclusivo della regione `italynorth` e blocca il provisioning automatico verso regioni esterne — il provisioning tramite Bicep è limitato alla creazione dell'account base del servizio. I deployment dei modelli (`text-embedding-ada-002` e `gpt-4o-mini`) vengono distribuiti manualmente tramite **Azure AI Studio / Portale Azure** al termine del deploy IaC. Questa scelta architetturale, motivata da vincoli di policy e sicurezza imposti dalla piattaforma accademica, preserva la riproducibilità dell'infrastruttura base e garantisce la piena conformità con le policy della sottoscrizione.
+L'integrazione dei modelli linguistici si basa su **Azure OpenAI Service**. I modelli selezionati sono:
+
+| Modello | Deployment | Utilizzo |
+|---------|-----------|---------|
+| `text-embedding-ada-002` | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Generazione vettori embedding (1536 dimensioni) |
+| `gpt-4o-mini` | `AZURE_OPENAI_CHAT_DEPLOYMENT` | Generazione metadati AI, risposta RAG, chat contestuale |
+
+**Motivazione architetturale**: L'adozione di Azure OpenAI Service garantisce conformità con le policy enterprise di trattamento dei dati, latenze inferiori grazie alla prossimità con i servizi Azure di persistenza, e un'integrazione sicura all'interno dell'ecosistema cloud del progetto.
+
+**Vincoli della Sottoscrizione Accademica**: La policy della sottoscrizione *Azure for Students* dell'Università della Calabria impone l'uso esclusivo della regione `italynorth` e blocca il provisioning automatico verso regioni esterne. Poiché tale regione non supporta il deployment automatico dei modelli OpenAI tramite ARM/Bicep, la configurazione IaC crea esclusivamente l'account base del servizio. I deployment dei modelli (`text-embedding-ada-002` e `gpt-4o-mini`) sono distribuiti manualmente tramite **Azure AI Studio / Portale Azure** al termine del deploy IaC. Questa scelta architetturale preserva la riproducibilità dell'infrastruttura base garantendo piena conformità con la sottoscrizione.
+
+#### Azure Container Registry (ACR)
+
+È stato predisposto un modulo Bicep per il provisioning di un **Azure Container Registry**, necessario per l'hosting delle immagini Docker del backend FastAPI in scenari di deployment containerizzato (Azure Container Apps, AKS). L'endpoint è esposto come output IaC tramite `acrLoginServer`.
 
 #### Azure Bicep — Infrastructure as Code
-Per il provisioning automatico e riproducibile delle risorse Azure si è adottato Azure Bicep come strumento nativo di Infrastructure as Code (IaC). Tale scelta, in netta contrapposizione alla configurazione manuale tramite portale web, è stata privilegiata anzitutto per motivi di sicurezza e controllo delle risorse: la gestione dichiarativa dell'infrastruttura azzera il rischio di errori umani (quali errate configurazioni di rete, dimenticanze sulle policy di cifratura o errate impostazioni sui livelli di accesso dei container) e consente di applicare rigorosi standard di sicurezza omogenei su tutte le risorse distribuite.
 
-Dal punto di vista architetturale e metodologico, l'adozione di Azure Bicep garantisce:
+Per il provisioning automatico e riproducibile dell'intera infrastruttura Azure si è adottato **Azure Bicep** come strumento nativo di Infrastructure as Code (IaC).
 
-Versionabilità e Tracciabilità: L'intera infrastruttura è trattata come codice sorgente e gestita direttamente all'interno della repository Git del progetto, permettendo di tracciare ogni modifica e mantenere uno storico completo delle evoluzioni architetturali.
+**Motivazione architetturale**:
 
-Riproducibilità degli Ambienti: Consente di ricreare o scalare l'intero stack applicativo (dallo storage al database NoSQL, fino ai servizi di ricerca vettoriale) in modo del tutto identico e automatizzato, facilitando la gestione di ambienti separati di sviluppo, test e produzione.
+- **Versionabilità e Tracciabilità**: L'intera infrastruttura è trattata come codice sorgente, gestita nella repository Git. Ogni modifica architetturale è tracciata nel log di versione con autore, data e motivazione.
+- **Riproducibilità degli Ambienti**: L'intero stack applicativo può essere ricreato in modo identico e automatizzato in pochi minuti, facilitando la gestione di ambienti separati di sviluppo, test e produzione.
+- **Sicurezza e Conformità**: La gestione dichiarativa azzera il rischio di errori umani legati a configurazioni manuali.
+- **Integrazione Nativa con Azure**: A differenza di Terraform (che richiede la gestione di file di stato `.tfstate`), Bicep è il linguaggio IaC nativo di Microsoft Azure, con sintassi dichiarativa semplificata rispetto ai template ARM JSON.
 
-Gestione Nativa dello Stato e Vantaggi Rispetto all'Approccio Manuale: Essendo lo strumento IaC nativo di Microsoft Azure, Bicep offre una sintassi dichiarativa fortemente semplificata rispetto ai tradizionali e complessi ARM template in formato JSON. Inoltre, a differenza di framework terzi (come Terraform), si integra nativamente con le API di Azure senza richiedere la gestione complessa e delicata di file di stato locali o remoti (.tfstate), allineando pienamente il progetto agli standard professionali e accademici più avanzati del settore.
+La struttura IaC è organizzata in un file principale `main.bicep` con `targetScope = 'subscription'`, che orchestra cinque moduli indipendenti:
+
+```
+Azure/
+├── main.bicep              # Orchestratore principale (scope: subscription)
+├── parameters.json         # Parametri di configurazione del deploy
+├── modules/
+│   ├── storage.bicep       # Azure Blob Storage (Standard LRS, due container)
+│   ├── cosmos.bicep        # Azure Cosmos DB (API NoSQL, Serverless, due container)
+│   ├── search.bicep        # Azure AI Search
+│   ├── openai.bicep        # Azure OpenAI Service (account base, region italynorth)
+│   └── acr.bicep           # Azure Container Registry (tier Basic)
+└── README.md               # Istruzioni operative deploy via Azure CLI
+```
 
 ### 3.2 FastAPI
-Il layer backend è stato sviluppato in Python utilizzando il framework FastAPI. La scelta è ricaduta su tale tecnologia in virtù delle sue eccellenti prestazioni, del supporto nativo alla programmazione asincrona e dell'integrazione nativa con Pydantic per la validazione formale dei dati in ingresso, elementi cruciali per la realizzazione di API REST performanti in un sistema distribuito.
+
+Il layer Backend è sviluppato in **Python** con il framework **FastAPI**. Le motivazioni principali sono:
+
+- **Prestazioni asincrone**: basato su **Starlette** e `asyncio`, è tra i framework Python più performanti per workload I/O-bound tipici delle integrazioni con API cloud;
+- **Tipizzazione nativa con Pydantic**: validazione automatica degli input HTTP e riduzione del codice boilerplate;
+- **Swagger UI automatica** (`/docs`): contratto API sempre aggiornato e consultabile;
+- **Gestione asincrona nativa**: supporto di prima classe per `async def` e `await`, fondamentale per l'integrazione con i client SDK Azure e le chain LangChain.
+
+Il ciclo di vita dell'applicazione è gestito tramite `@asynccontextmanager lifespan`, che all'avvio esegue `setup_ai_search_index()` garantendo che l'indice vettoriale sia disponibile prima di accettare richieste.
 
 ### 3.3 LangChain
-Per l'orchestrazione delle pipeline di intelligenza artificiale si è optato per il framework LangChain. Rispetto alle alternative disponibili, LangChain offre una maggiore maturità e astrazione per la costruzione di catene RAG personalizzate, fornendo al contempo un'integrazione nativa ottimizzata con i servizi Azure OpenAI e Azure AI Search utilizzati.
+
+Per l'orchestrazione delle pipeline AI si è adottato **LangChain**, che offre il pattern **LCEL (LangChain Expression Language)** per la composizione dichiarativa di componenti tramite l'operatore `|`, con integrazioni native ottimizzate per **Azure OpenAI** e il pattern *Structured Output* (function calling).
 
 ### 3.4 Flutter/Dart
-Il layer di presentazione (Frontend) è stato progettato utilizzando il framework Flutter (Dart). L'adozione di tale tecnologia consente di sviluppare un'applicazione client cross-platform a partire da un'unica base di codice, assicurando prestazioni native e un'interfaccia utente moderna e reattiva, requisiti essenziali per la fruizione ottimale dell'archivio notizie.
+
+Il layer di presentazione è realizzato con **Flutter** (Dart), framework cross-platform che genera applicazioni native per Web, Desktop e Mobile da un'unica base di codice. Il progetto è configurato e testato in modalità **Web**.
+
+Le dipendenze principali (`pubspec.yaml`):
+
+| Pacchetto | Versione | Utilizzo |
+|-----------|---------|---------|
+| `http` | `^1.2.0` | Chiamate HTTP REST verso il Backend |
+| `shared_preferences` | `^2.3.2` | Persistenza locale del token JWT |
+| `file_picker` | `^8.1.4` | Selezione file dal filesystem locale |
+| `desktop_drop` | `^0.8.3` | Drag-and-drop di file sull'interfaccia |
+| `pdf` | `^3.10.8` | Generazione PDF lato client dei metadati articolo |
+| `openid_client` | `^0.4.8` | Supporto flussi OIDC |
+| `flutter_appauth` | `^7.0.1` | Autenticazione OAuth2/OIDC |
+
+---
 
 ## 4. Dettagli Implementativi
 
 ### 4.1 Struttura del Backend (FastAPI)
 
-Il backend è organizzato secondo una struttura modulare a layer, che separa nettamente la configurazione, i modelli dati, i router HTTP e i servizi di business logic:
+Il backend è organizzato secondo una struttura modulare a layer:
 
 ```
-backend/
+Backend/
 ├── app/
-│   ├── main.py               # Entry point FastAPI: CORS, router, health-check
-│   ├── config.py             # Settings Pydantic (lettura da .env)
-│   ├── azure_clients.py      # Singleton client SDK Azure (Blob, Cosmos, Search, OpenAI)
+│   ├── main.py                # Entry point: lifespan, CORS, router registration
+│   ├── config.py              # Settings Pydantic (lettura tipizzata da .env)
+│   ├── azure_clients.py       # Singleton client SDK Azure (Blob asincrono, Cosmos)
 │   ├── models/
-│   │   ├── article.py        # Modelli Pydantic: ManualMetadata, ArticleDocument, EmbeddingDocument
-│   │   └── chunk.py          # Modelli Pydantic: RagSearchQuery, GenericSearchQuery
+│   │   ├── article.py         # ManualMetadata, MetadataIA, ArticleDocument,
+│   │   │                      #   ArticleUpdateModel, EmbeddingDocument
+│   │   └── chunk.py           # RagSearchQuery, GenericSearchQuery, ArticleChatQuery
 │   ├── routers/
-│   │   ├── articles.py       # Endpoint CRUD articoli (upload, lista, dettaglio)
-│   │   └── search.py         # Endpoint ricerca RAG e keyword
+│   │   ├── articles.py        # CRUD completo articoli
+│   │   ├── search.py          # RAG, keyword, chat contestuale
+│   │   └── utente.py          # Autenticazione (addUtente, login)
 │   └── services/
-│       ├── blob_service.py        # Upload su Azure Blob Storage (client asincrono)
-│       ├── cosmos_service.py      # CRUD metadati su Cosmos DB (articoli e chunk)
-│       ├── search_service.py      # Indicizzazione e ricerca vettoriale su Azure AI Search
-│       ├── ai_service.py          # Generazione metadati AI, embedding, risposta RAG (LangChain)
-│       └── ingestion_service.py   # Parser multiformat (TXT/MD/JSON/DOCX/PDF)
+│       ├── blob_service.py        # Upload, download, delete su Azure Blob Storage
+│       ├── cosmos_service.py      # CRUD metadati su Cosmos DB
+│       ├── search_service.py      # Setup indice, indicizzazione, ricerca, similarità
+│       ├── ai_service.py          # Metadati AI, embedding, RAG, chat
+│       └── ingestion_service.py   # Parser multiformat
 ├── autentication/
-│   ├── keycloack_service.py  # Verifica JWT tramite Keycloak (OIDC/RS256)
-│   └── docker-compose.yml    # Stack Keycloak locale per sviluppo
+│   ├── keycloack_service.py   # Verifica JWT (OIDC/RS256), addUtente, login_user
+│   └── docker-compose.yml     # Stack Keycloak containerizzato per sviluppo locale
 ├── requirements.txt
 └── .env / .env.example
 ```
 
 #### Gestione della Configurazione (`config.py`)
-La configurazione dell'applicazione è centralizzata nel modulo `config.py`, che sfrutta `pydantic-settings` (`BaseSettings`) per il caricamento tipizzato e validato delle variabili d'ambiente dal file `.env`. Questa scelta garantisce il fail-fast in fase di avvio: se una credenziale obbligatoria è assente, l'applicazione non si avvia, prevenendo errori runtime difficili da diagnosticare. Le variabili gestite includono le stringhe di connessione e le API key per tutti e quattro i servizi Azure (Blob Storage, Cosmos DB, AI Search, OpenAI).
+
+La configurazione è centralizzata tramite `pydantic-settings` (`BaseSettings`) per il caricamento tipizzato dal file `.env`. Il pattern **fail-fast** garantisce che l'applicazione non si avvii in assenza di credenziali obbligatorie, prevenendo errori runtime difficili da diagnosticare.
 
 #### Client Azure Centralizzati (`azure_clients.py`)
-I client degli SDK Azure sono istanziati come singleton a livello di modulo in `azure_clients.py`. Una scelta progettuale rilevante riguarda il client di Azure Blob Storage: si è adottato il client **asincrono** (`azure.storage.blob.aio.BlobServiceClient`) anziché quello sincrono. Questa decisione è stata motivata dalla necessità di compatibilità con il runtime asincrono di FastAPI: l'uso del client sincrono all'interno di una funzione `async def` avrebbe provocato un blocco del thread dell'event loop, degradando le prestazioni sotto carico. L'uso del client asincrono garantisce che le operazioni I/O-bound verso Azure Blob non blocchino il server durante l'attesa della risposta.
+
+I client degli SDK Azure sono istanziati come **singleton** a livello di modulo. Il client di Azure Blob Storage adotta la variante **asincrona** (`azure.storage.blob.aio.BlobServiceClient`): l'uso del client sincrono in un contesto `async def` bloccherebbe il thread dell'event loop, degradando le prestazioni sotto carico.
 
 ### 4.2 Modelli Dati (Pydantic)
 
-I modelli dati sono definiti con Pydantic in `app/models/article.py` e strutturati gerarchicamente:
+| Modello | Campi principali | Ruolo |
+|---------|-----------------|-------|
+| `ManualMetadata` | `title`, `author`, `category`, `description`, `tags` | Metadati inseriti dall'utente |
+| `MetadataIA` | `subtitle`, `summary`, `keywords`, `category`, `language`, `entities` | Metadati generati dall'LLM |
+| `ArticleDocument` | `id`, `user_id`, `blob_url`, `cover_url`, `uploaded_at`, `manual`, `IA_metadata` | Documento completo su Cosmos DB |
+| `ArticleUpdateModel` | `title`, `author`, `description`, `category`, `tags` (tutti opzionali) | Aggiornamento parziale metadati |
+| `EmbeddingDocument` | `chunk_id`, `article_id`, `chunk_text`, `embedding` | Documento chunk su AI Search |
+| `ArticleChatQuery` | `question`, `current_article_id` | Query per chat contestuale |
 
-- **`ManualMetadata`**: Incapsula i metadati inseriti manualmente dall'utente al momento dell'upload (`title`, `author`, `category`, `description`, `tags`). Tutti i campi sono opzionali, permettendo upload parziali senza errori di validazione.
-- **`MetadataIA`**: Modello Pydantic che formalizza lo schema dei metadati generati dal modello linguistico. Definisce i campi `subtitle`, `keywords`, `category`, `language`, `summary` ed `entities`, tutti tipizzati e opzionali. La definizione di questo modello come schema Pydantic non assolve solo a una funzione di validazione: viene passato direttamente a `llm.with_structured_output(MetadataIA)` di LangChain, che utilizza lo schema JSON Schema derivato automaticamente da Pydantic per istruire il modello a produrre un output strutturato e deterministico (function calling).
-- **`ArticleDocument`**: Rappresenta il documento completo persistito su Cosmos DB. Aggrega `id`, `blob_url`, `uploaded_at`, `manual_metadata` e il campo `IA_metadata` di tipo `MetadataIA`. La struttura gerarchica e separata per tipologia di metadati garantisce massima flessibilità per evoluzione futura dello schema senza migrazioni distruttive.
+Il modello `MetadataIA` viene passato a `llm.with_structured_output(MetadataIA)` per il *function calling*, garantendo output JSON sempre deserializzabile e tipizzato.
 
-### 4.3 Ingestion & Parsing Multiformat (`ingestion_service.py`)
+### 4.3 Ingestion e Parsing Multiformat (`ingestion_service.py`)
 
-Il modulo `ingestion_service.py` implementa la funzione `extract_text_from_file(file_bytes, filename)`, responsabile dell'estrazione del contenuto testuale grezzo da tutti i formati supportati:
+La funzione `extract_text_from_file(file_bytes, filename)` supporta:
 
-| Formato | Libreria | Strategia di estrazione |
-|---------|----------|------------------------|
+| Formato | Libreria | Strategia di Estrazione |
+|---------|---------|------------------------|
 | `.txt`, `.md` | Built-in Python | Decodifica UTF-8 diretta |
-| `.json` | `json` (stdlib) | Parse + re-serializzazione come stringa |
+| `.json` | `json` (stdlib) | Parse strutturato + re-serializzazione come stringa |
 | `.docx` | `python-docx` | Estrazione paragrafo per paragrafo via `Document.paragraphs` |
 | `.pdf` | `PyPDF2` | Estrazione pagina per pagina via `PdfReader.pages` |
 
-Per i formati non riconosciuti viene sollevata una `ValueError` con messaggio esplicativo, che il layer superiore potrà catturare e trasformare in una risposta HTTP `400 Bad Request`.
+Per i formati non riconosciuti viene sollevata una `ValueError` che il layer superiore trasforma in `HTTP 400 Bad Request`.
 
-### 4.4 Endpoint di Upload (`POST /articles/upload`)
+### 4.4 Pipeline di Upload (`POST /articles/upload`)
 
-L'endpoint `POST /articles/upload`, implementato in `app/routers/articles.py`, orchestra l'intera pipeline di ingestion per un singolo articolo. Il flusso eseguito è il seguente:
+L'endpoint è protetto da `Depends(get_current_user)`. Il flusso orchestrato è il seguente:
 
-1. **Validazione dell'input**: Verifica che il file sia presente e che il filename non sia vuoto; in caso contrario restituisce `HTTP 400`.
-2. **Generazione ID univoco**: Creazione di un UUID v4 tramite il modulo standard `uuid`, utilizzato sia come identificatore del documento su Cosmos DB sia come nome del blob (`{article_id}.{ext}`).
-3. **Controllo duplicazione titolo**: Prima di procedere, viene invocata `check_title_exists(title)` che esegue una query su Cosmos DB per verificare se esiste già un documento con lo stesso titolo. In caso affermativo, l'endpoint restituisce `HTTP 400` con un messaggio esplicativo, impedendo la duplicazione di articoli nella raccolta.
-4. **Controllo similarità semantica (deduplicazione vettoriale)**: I primi 500 caratteri del testo estratto vengono convertiti in embedding tramite `generate_embedding_for_chunks()`. Il vettore ottenuto viene passato a `check_similarity()`, che interroga Azure AI Search in modalità vettoriale con `k=1` e verifica se il punteggio del documento più vicino supera la soglia di 0.90. Se supera la soglia, l'upload viene bloccato con `HTTP 400` per prevenire l'inserimento di contenuti semanticamente quasi identici.
-5. **Upload su Azure Blob Storage**: Il contenuto binario del file viene caricato nel container `articles-raw` tramite `blob_service.uploaded_file_to_blob()`. L'operazione è `await`-ata, sfruttando il client asincrono. Se il form include un'immagine di copertina (`cover_image`), viene caricata separatamente tramite `upload_cover()`, restituendo un `cover_url` associato all'articolo.
-6. **Estrazione testo**: Il contenuto binario viene passato a `ingestion_service.extract_text_from_file()` per ottenere la stringa di testo grezzo su cui operano le pipeline AI successive.
-7. **Costruzione dei metadati manuali**: I campi del form (`title`, `author`, `category`, `description`, `tags`) vengono istanziati in un oggetto `ManualMetadata`. I tag, ricevuti come stringa CSV, vengono normalizzati in lista Python.
-8. **Generazione metadati AI**: Il testo estratto viene passato ad `ai_service.generate_ai_metadata()` (chiamata `await`-ata) che invoca la chain LangChain e restituisce un oggetto `MetadataIA` popolato.
-9. **Creazione del documento**: Viene costruito un oggetto `ArticleDocument` aggregando `id`, `blob_url`, `cover_url`, timestamp UTC, `manual` e `IA_metadata`.
-10. **Persistenza su Cosmos DB**: Il documento viene serializzato in JSON tramite `.model_dump(mode='json')` e salvato su Cosmos DB tramite `cosmos_service.save_article_metadata()`.
-11. **Chunking e persistenza chunk**: Il testo viene suddiviso tramite `chunking()` e i chunk salvati su Cosmos DB (container `chunks`) tramite `save_chunks_metadata()`.
-12. **Embedding e indicizzazione**: Gli embedding dei chunk vengono generati (con `await`) e caricati su Azure AI Search tramite `index_chunk_to_ai_search()`.
-13. **Risposta**: L'endpoint restituisce `HTTP 201 Created` con un payload JSON contenente `status`, `message`, `filename`, `blob_url` e `cover_url`.
+[RIFERIMENTO DIAGRAMMA PIPELINE DI UPLOAD]
+
+1. **Validazione input**: filename non vuoto, altrimenti `HTTP 400`.
+2. **Controllo duplicazione per titolo**: query Cosmos DB parametrizzata `c.manual.title = @title`; se esiste, `HTTP 400`.
+3. **Generazione UUID v4**: identificatore univoco per articolo e nome blob (`{article_id}.{ext}`).
+4. **Parsing del file**: `extract_text_from_file()` restituisce il testo grezzo.
+5. **Controllo similarità semantica (deduplicazione vettoriale)**: i primi 500 caratteri vengono convertiti in embedding e confrontati con AI Search (`k=1`, soglia `0.90`). Se il punteggio supera la soglia, `HTTP 400`. Il controllo avviene **prima** dell'upload su Blob, evitando sprechi di risorse su contenuti che verranno rifiutati.
+6. **Upload Blob Storage**: file su `articles-raw`, copertina opzionale su container dedicato tramite `upload_cover()`.
+7. **Costruzione `ManualMetadata`**: normalizzazione categorie e tag.
+8. **Generazione metadati AI**: `generate_ai_metadata()` (asincrona) restituisce `MetadataIA` validato da Pydantic.
+9. **Costruzione `ArticleDocument`**: aggregazione di tutti i campi, incluso `user_id` estratto dal claim `sub` del token JWT.
+10. **Persistenza Cosmos DB (articoli)**: serializzazione con `.model_dump(mode='json')` e `save_article_metadata()`.
+11. **Chunking e persistenza chunk**: `chunking()` + `save_chunks_metadata()` nel container `chunks`.
+12. **Embedding e indicizzazione vettoriale**: `generate_embedding_for_chunks()` + `index_chunk_to_ai_search()`.
+13. **Risposta `HTTP 201 Created`**: `status`, `message`, `filename`, `blob_url`, `cover_url`.
 
 ### 4.5 Generazione Metadati via LLM (LangChain + Azure OpenAI)
 
-La generazione automatica dei metadati rappresenta il nucleo della componente di intelligenza artificiale del sistema e risponde direttamente al requisito di traccia che impone l'"estrazione automatica di metadati descrittivi" dall'articolo caricato. Il modulo responsabile è `app/services/ai_service.py`, il cui funzionamento si articola nelle seguenti fasi.
+Il modulo `app/services/ai_service.py` implementa la pipeline di generazione metadati.
 
-#### Definizione dello Schema di Output (Pydantic + Structured Output)
-
-Il primo elemento architetturale rilevante è la definizione del modello `MetadataIA` in `app/models/article.py` come schema Pydantic. Tale modello descrive formalmente i sei campi di metadati che il sistema deve estrarre:
+#### Schema di Output (Pydantic + Structured Output)
 
 | Campo | Tipo | Semantica |
 |-------|------|-----------|
-| `subtitle` | `str` | Sottotitolo editoriale sintetico dell'articolo |
-| `summary` | `str` | Riassunto dei contenuti principali (2-4 frasi) |
-| `keywords` | `List[str]` | Parole chiave tematiche estratte dal testo |
-| `category` | `List[str]` | Categorie giornalistiche (es. Politica, Economia) |
-| `language` | `str` | Lingua rilevata dell'articolo (es. `it`, `en`) |
-| `entities` | `List[str]` | Entità nominate: persone, luoghi, organizzazioni (formato `"tipo: nome"`) |
+| `subtitle` | `str` | Sottotitolo editoriale sintetico |
+| `summary` | `str` | Riassunto dettagliato (3-4 frasi corpose) |
+| `keywords` | `List[str]` | Parole chiave tematiche |
+| `category` | `List[str]` | Categorie giornalistiche |
+| `language` | `str` | Lingua rilevata dell'articolo |
+| `entities` | `List[str]` | Entità nominate (formato `"tipo: nome"`) |
 
-Lo schema Pydantic viene passato al metodo `llm.with_structured_output(MetadataIA)` di LangChain, che utilizza la funzionalità di **function calling** dell'API di Azure OpenAI per vincolare il modello linguistico a produrre un output JSON strettamente conforme allo schema derivato automaticamente da Pydantic. Questo approccio elimina la necessità di parsing manuale dell'output testuale e garantisce che il JSON restituito sia sempre deserializzabile nell'oggetto `MetadataIA`, con validazione automatica dei tipi da parte di Pydantic.
+`llm.with_structured_output(MetadataIA)` utilizza il **function calling** di Azure OpenAI per vincolare il modello a produrre un output JSON strettamente conforme allo schema, eliminando la necessità di parsing manuale.
 
-#### Costruzione della Chain LangChain (Prompt → LLM Strutturato)
-
-L'orchestrazione della pipeline di generazione avviene tramite LangChain, secondo il pattern LCEL (LangChain Expression Language), che compone i componenti della chain tramite l'operatore `|`:
+#### Chain LangChain (LCEL)
 
 ```python
 ai_metadata_chain = prompt | structured_llm
 ```
 
-Il `ChatPromptTemplate` definisce due messaggi:
-- **System message**: istruisce il modello sul suo ruolo di "assistente editoriale esperto", stabilisce l'obiettivo dell'analisi e vincola il formato della risposta.
-- **Human message**: inietta dinamicamente il testo dell'articolo estratto dal parser tramite la variabile `{text_content}`.
+Il `ChatPromptTemplate` definisce:
+- **System message**: ruolo di "assistente editoriale esperto", regole di estrazione, vincoli sul formato;
+- **Human message**: testo dell'articolo iniettato via `{text_content}`.
 
-La chain viene invocata in modalità asincrona tramite il metodo `ainvoke()`, garantendo la compatibilità con il runtime `asyncio` di FastAPI senza bloccare il thread del server durante l'attesa della risposta da Azure OpenAI.
+La chain è invocata tramite `ainvoke()` (asincrona), compatibile con il runtime `asyncio` di FastAPI. In caso di errore, viene sollevata `HTTPException 503 Service Unavailable`.
 
-#### Integrazione nella Pipeline di Upload
+#### Modalità TEST_MODE
 
-Nella pipeline dell'endpoint `POST /articles/upload`, dopo l'estrazione del testo tramite il parser multiformat, il testo grezzo viene passato alla funzione `generate_ai_metadata(text_content)`. Il risultato, un oggetto `MetadataIA` validato da Pydantic, viene inserito nel campo `IA_metadata` dell'`ArticleDocument` e persistito su Cosmos DB insieme ai metadati manuali. Il documento finale su Cosmos DB contiene quindi, per ogni articolo, sia i metadati forniti dall'utente sia quelli generati automaticamente dall'LLM, in un unico documento JSON dalla struttura gerarchica estensibile.
-
-#### Gestione degli Errori
-
-In caso di errore durante l'invocazione del modello (es. timeout, quota esaurita, risposta malformata), la funzione `generate_ai_metadata` solleva una `HTTPException` con codice `503 Service Unavailable` e un messaggio esplicativo. Questa strategia di gestione degli errori è preferibile rispetto al rilancio di un'eccezione generica non gestita, in quanto garantisce che FastAPI restituisca sempre una risposta HTTP con codice e corpo controllati, migliorando la diagnosticabilità del sistema in produzione.
+In modalità `TEST_MODE=True`, tutte le funzioni di `ai_service.py` restituiscono risposte mock predeterminate, consentendo sviluppo e testing senza consumo di crediti Azure OpenAI.
 
 ### 4.6 Chunking, Embedding e Indicizzazione Vettoriale
 
-La pipeline di preparazione dei dati per la ricerca semantica si articola in tre fasi sequenziali, orchestrate nell'endpoint di upload dopo la persistenza dei metadati su Cosmos DB.
+[RIFERIMENTO DIAGRAMMA PIPELINE DI INDICIZZAZIONE VETTORIALE]
 
-#### Chunking del testo (`ai_service.chunking`)
+#### Inizializzazione Automatica dell'Indice (`setup_ai_search_index`)
 
-Il testo grezzo estratto dal parser viene suddiviso in frammenti (*chunk*) di dimensione controllata tramite il `RecursiveCharacterTextSplitter` di LangChain. I parametri adottati (`chunk_size=500`, `chunk_overlap=50`) garantiscono che ogni chunk sia abbastanza ridotto da essere rappresentato in modo semanticamente coerente da un singolo vettore embedding, e che la sovrapposizione di 50 caratteri tra chunk adiacenti preservi il contesto ai margini di ogni frammento, evitando interruzioni semantiche nette.
+All'avvio tramite `lifespan`, la funzione verifica e crea automaticamente l'indice vettoriale su Azure AI Search:
 
-#### Generazione degli Embedding (`ai_service.generate_embedding_for_chunks`)
+| Campo | Tipo AI Search | Proprietà |
+|-------|---------------|-----------|
+| `chunk_id` | `String` | Chiave primaria |
+| `article_id` | `String` | Filtrabile |
+| `chunk_text` | `String` | Ricercabile full-text |
+| `embedding` | `Collection(Single)` | Vettore 1536 dimensioni, profilo HNSW |
 
-La lista di chunk testuali viene passata alla funzione asincrona `generate_embedding_for_chunks`, che invoca `AzureOpenAIEmbeddings.aembed_documents()` tramite LangChain. Il modello `text-embedding-ada-002` trasforma ogni frammento in un vettore denso a 1536 dimensioni, restituendo una lista parallela di vettori `list[list[float]]` nel medesimo ordine dei chunk in ingresso. Questa proprietà di parallelismo posizionale è fondamentale per la fase successiva.
+In caso di indice già esistente, `ResourceExistsError` viene catturato e il server si avvia normalmente. Questa funzionalità costituisce un elemento di **Infrastructure as Code applicativo** che garantisce la coerenza dello schema senza interventi manuali.
 
-#### Accoppiamento e Indicizzazione su Azure AI Search (`search_service.index_chunk_to_ai_search`)
+#### Chunking (`ai_service.chunking`)
 
-La funzione `index_chunk_to_ai_search` riceve le due liste parallele — `chunks: list[str]` e `embedding: list[list[float]]` — e le percorre in modo sincrono tramite `zip(chunks, embedding)` dentro un ciclo `enumerate`. L'uso combinato di `zip` ed `enumerate` garantisce che ad ogni iterazione il testo e il suo vettore corrispondente vengano accoppiati in modo deterministico, e che venga generato un `chunk_id` univoco nella forma `{article_id}-chunk-{index}`. Per ogni coppia viene istanziato un oggetto Pydantic `EmbeddingDocument` e serializzato in dizionario tramite `.model_dump()`, producendo il formato JSON atteso dall'SDK `azure-search-documents`.
+`RecursiveCharacterTextSplitter` con `chunk_size=500` e `chunk_overlap=50`. La sovrapposizione preserva il contesto ai margini dei frammenti, evitando interruzioni semantiche nette che degraderebbero la qualità del retrieval.
 
-L'intera lista di documenti viene caricata su Azure AI Search con una singola chiamata batch a `upload_documents`, minimizzando la latenza di rete. Il client utilizzato è quello **asincrono** (`azure.search.documents.aio.SearchClient`), necessario per la compatibilità con l'event loop di FastAPI: l'uso del client sincrono in un contesto `async def` bloccherebbe il thread del server. Il client viene istanziato e chiuso all'interno di un `async with`, garantendo il rilascio corretto delle risorse HTTP.
+#### Generazione Embedding (`ai_service.generate_embedding_for_chunks`)
 
-In modalità `TEST_MODE=True`, la funzione ritorna immediatamente con un messaggio di log, senza effettuare alcuna chiamata al cloud, coerentemente con il pattern di mock adottato nelle funzioni `generate_ai_metadata` e `generate_embedding_for_chunks`.
+`AzureOpenAIEmbeddings.aembed_documents()` trasforma ogni chunk in un vettore denso a **1536 dimensioni**, restituendo una lista parallela nel medesimo ordine dei chunk in ingresso.
 
-| Oggetto Pydantic | Campo | Ruolo in Azure AI Search |
-|---|---|---|
-| `EmbeddingDocument` | `chunk_id` | Chiave primaria del documento nell'indice |
-| `EmbeddingDocument` | `article_id` | Campo di filtro per recuperare tutti i chunk di un articolo |
-| `EmbeddingDocument` | `chunk_text` | Campo testo su cui opera la ricerca full-text (BM25) |
-| `EmbeddingDocument` | `embedding` | Campo vettore su cui opera la ricerca semantica (HNSW) |
+#### Indicizzazione (`search_service.index_chunk_to_ai_search`)
 
-### 4.7 Motore RAG e Risposta Finale (`POST /search/rag`)
+`zip(chunks, embedding)` con `enumerate` accoppia deterministicamente testo e vettore, generando `chunk_id = {article_id}-chunk-{index}`. Il caricamento avviene con una singola chiamata batch `upload_documents` tramite il client asincrono (`azure.search.documents.aio.SearchClient`) gestito con `async with` per il rilascio corretto delle risorse HTTP.
 
-L'endpoint `POST /search/rag`, implementato in `app/routers/search.py`, implementa la pipeline RAG completa per la ricerca in linguaggio naturale sull'archivio di articoli.
+#### Deduplicazione Semantica (`search_service.check_similarity`)
 
-#### Flusso della pipeline RAG
+`VectorizedQuery` con `k_nearest_neighbors=1` e soglia `0.90`: rileva contenuti riformulati o leggermente modificati che eluderebbero un controllo sul solo titolo. L'esecuzione prima dell'upload su Blob risparmia sia storage che crediti OpenAI.
 
-1. **Embedding della domanda**: La stringa di testo della domanda (`query.question`) viene convertita in un vettore embedding a 1536 dimensioni tramite `generate_embedding_for_chunks([query.question])`. Il risultato è una lista con un singolo vettore, da cui si estrae il primo elemento (`query_embedding[0]`).
+### 4.7 Motore RAG (`POST /search/rag`) e Chat AI (`POST /search/article-chat`)
 
-2. **Ricerca dei chunk rilevanti** (`search_relevant_chunks`): Il vettore della domanda viene passato a `search_service.search_relevant_chunks()`, che esegue una ricerca vettoriale su Azure AI Search tramite `VectorizedQuery` con `k_nearest_neighbors=3`. La funzione restituisce una lista di dizionari, ognuno contenente `article_id`, `chunk_text` e `score` (punteggio di rilevanza). Se nessun chunk supera la soglia, l'endpoint restituisce una risposta "non trovato" senza invocare il modello linguistico.
+[RIFERIMENTO DIAGRAMMA PIPELINE RAG]
 
-3. **Generazione della risposta RAG** (`generate_rag_answer`): I chunk rilevanti vengono assemblati in un unico contesto testuale e passati al modello `gpt-4o-mini` tramite un `ChatPromptTemplate` bipartito (system + human). Il **system message** vincola esplicitamente il modello a rispondere basandosi **esclusivamente** sul contesto fornito, senza accedere a conoscenze esterne, con fallback esplicito in caso di assenza di informazioni pertinenti. La chain `rag_prompt | llm` viene invocata in modo asincrono tramite `ainvoke()`, garantendo la piena compatibilità con il runtime di FastAPI.
+#### Flusso della Pipeline RAG
 
-4. **Risposta strutturata**: L'endpoint restituisce un payload JSON con tre campi: `question` (domanda originale), `answer` (testo generato dal LLM) e `relevant_chunks` (lista dei chunk sorgente con score e article_id, per tracciabilità delle fonti).
+1. **Embedding della domanda**: `generate_embedding_for_chunks([query.question])` produce un vettore a 1536 dimensioni.
+2. **Ricerca chunk rilevanti** (`search_relevant_chunks`): `VectorizedQuery` con `k_nearest_neighbors=3`. Se nessun chunk viene trovato, risposta "non trovato" senza invocare il LLM (risparmio crediti).
+3. **Recupero articoli completi**: per ogni `article_id` distinto nei chunk rilevanti, `get_article_by_id()` da Cosmos DB.
+4. **Generazione risposta RAG** (`generate_rag_answer`): `rag_prompt | llm` con `ainvoke()`. Il system message vincola il modello a rispondere **esclusivamente** dal contesto fornito, con fallback esplicito in assenza di informazioni pertinenti.
+5. **Risposta strutturata**: `question`, `answer`, `relevant_chunks` (articoli completi per la tracciabilità delle fonti).
 
-#### Endpoint di ricerca per keyword (`POST /search/generic`)
+#### Endpoint Ricerca per Keyword (`POST /search/generic`)
 
-In parallelo al motore RAG, il sistema espone un endpoint `POST /search/generic` per la ricerca tradizionale per parola chiave. La funzione `cosmos_service.search_by_keywords()` esegue una query Cosmos DB SQL con `CONTAINS()` su cinque campi del documento (`title`, `description`, `category`, `author`, `tags`), con corrispondenza case-insensitive. L'endpoint è concepito per ricerche rapide e filtri informativi, complementari alla ricerca semantica RAG.
+`cosmos_service.search_by_keywords()` esegue query Cosmos DB SQL con `CONTAINS()` case-insensitive su cinque campi (`title`, `description`, `author`, `category`, `tags`), con supporto per ricerche su array tramite `EXISTS(SELECT VALUE ... FROM ... IN ...)`.
 
-### 4.8 Endpoint di Lettura Articoli
+#### Chat AI Contestuale (`POST /search/article-chat`)
 
-#### `GET /articles` — Lista articoli con paginazione e filtri
+`generate_chat_answer(relevant_chunks, question, current_article_id)` differisce da `generate_rag_answer` per un prompt di sistema arricchito che:
+- Informa il modello dell'`article_id` correntemente letto dall'utente;
+- Distingue chunk dell'articolo corrente da chunk di altri articoli;
+- Se rileva chunk di articoli semanticamente correlati, segnala attivamente i contenuti correlati, incentivando la navigazione.
 
-L'endpoint restituisce una lista paginata di articoli, supportando i seguenti query parameter:
+### 4.8 CRUD Completo degli Articoli
+
+| Metodo | Endpoint | Auth | Descrizione |
+|--------|---------|------|-------------|
+| `POST` | `/articles/upload` | Richiesta | Upload, pipeline AI, indicizzazione |
+| `GET` | `/articles` | Pubblica | Lista paginata con filtri categoria e ordinamento |
+| `GET` | `/articles/me` | Richiesta | Articoli dell'utente autenticato con ricerca keyword |
+| `GET` | `/articles/{id}` | Pubblica | Dettaglio articolo con chunk |
+| `GET` | `/articles/{id}/download` | Richiesta | Download file originale da Blob Storage |
+| `GET` | `/articles/{id}/cover` | Pubblica | Download immagine di copertina (proxy backend) |
+| `DELETE` | `/articles/{id}/delete` | Richiesta (owner) | Eliminazione cascata (Blob + Cosmos + AI Search) |
+| `PUT` | `/articles/{id}/update` | Richiesta (owner) | Aggiornamento selettivo metadati manuali |
+
+#### Paginazione e Filtri (`GET /articles`)
 
 | Parametro | Tipo | Default | Semantica |
 |-----------|------|---------|-----------|
-| `decreasing` | `bool` | `false` | Ordine cronologico crescente (true) o decrescente (false) |
-| `category` | `str` | `None` | Filtro per categoria tematica |
-| `skip` | `int` | `0` | Offset per la paginazione (infinite scroll) |
-| `limit` | `int` | `10` | Numero massimo di articoli restituiti per pagina |
+| `decreasing` | `bool` | `false` | `false` = più recenti per primi |
+| `category` | `str` | `None` | Filtro `ARRAY_CONTAINS` sulla categoria |
+| `skip` | `int` | `0` | Offset paginazione (infinite scroll) |
+| `limit` | `int` | `10` | Elementi per pagina |
 
-La funzione `cosmos_service.get_articles_list()` costruisce la query Cosmos DB dinamicamente, aggiungendo la clausola `WHERE` solo se `category` è fornita, e applicando `ORDER BY c.uploaded_at` con la direzione appropriata. La proiezione SQL seleziona solo i campi necessari per la lista (`id`, `title`, `author`, `category`, `blob_url`, `cover_url`, `uploaded_at`), minimizzando il volume di dati trasferiti.
+#### Eliminazione Cascata con Ownership
 
-#### `GET /articles/{article_id}` — Dettaglio articolo
+L'eliminazione verifica `article.user_id == current_user['sub']` (`HTTP 403` se non autorizzato), poi elimina in sequenza: file Blob, copertina Blob, metadati e chunk Cosmos DB, vettori AI Search (`chunk_id = {article_id}-chunk-{i}` deterministico). Nessun dato orfano rimane nel sistema.
 
-L'endpoint restituisce il documento completo di un articolo dato il suo UUID, arricchito con la lista dei chunk testali associati. La funzione `cosmos_service.get_article_by_id()` sfrutta la lettura a punto (`read_item`) di Cosmos DB, operazione a costo O(1) grazie alla chiave di partizione coincidente con `article_id`. I chunk vengono recuperati separatamente da `cosmos_service.get_chunks_by_article_id()` tramite una query sul container `chunks`, ordinata per `chunk_index ASC` per preservare l'ordine sequenziale del documento originale. In caso di `article_id` inesistente, l'endpoint restituisce `HTTP 404 Not Found`.
+#### Aggiornamento Selettivo (`PUT /articles/{id}/update`)
+
+`update_data.model_dump(exclude_unset=True)` estrae solo i campi forniti, applicandoli esclusivamente al sotto-documento `manual` tramite `replace_item()`. I metadati AI e i dati di sistema rimangono intatti.
 
 ### 4.9 Autenticazione tramite Keycloak (OIDC/JWT)
 
-Il sistema di autenticazione è implementato nel modulo `autentication/keycloack_service.py`, che espone una dipendenza FastAPI (`get_current_user`) riutilizzabile da qualsiasi endpoint che richieda protezione.
+[RIFERIMENTO DIAGRAMMA FLUSSO AUTENTICAZIONE OIDC]
 
-#### Architettura della verifica token
+#### Verifica Token JWT (`get_current_user`)
 
-La verifica dei token si basa sullo standard **OpenID Connect (OIDC)** con algoritmo di firma **RS256** (RSA con SHA-256). Il flusso è il seguente:
+1. Estrazione Bearer token via `HTTPBearer`;
+2. Download JWKS da `{KEYCLOAK_SERVER_URL}/realms/{realm}/protocol/openid-connect/certs` (rotazione chiavi trasparente);
+3. Verifica crittografica RS256 con `python-jose` (firma, scadenza `exp`, issuer `iss`);
+4. Restituzione payload (`sub`, `preferred_username`, claim OIDC) tramite `Depends(get_current_user)`;
+5. `HTTP 401 Unauthorized` con header `WWW-Authenticate: Bearer` in caso di token non valido, scaduto o alterato.
 
-1. **Estrazione Bearer token**: FastAPI estrae automaticamente il token JWT dall'header `Authorization: Bearer <token>` tramite `HTTPBearer`.
-2. **Download delle chiavi pubbliche JWKS**: La funzione `get_keycloak_public_keys()` scarica dinamicamente il **JWKS (JSON Web Key Set)** dall'endpoint pubblico di Keycloak (`/realms/{realm}/protocol/openid-connect/certs`). Questo approccio elimina la necessità di distribuire le chiavi pubbliche staticamente nel backend: Keycloak gestisce la rotazione delle chiavi in modo trasparente.
-3. **Verifica crittografica**: La libreria `python-jose` decodifica e verifica il token JWT verificando la firma RSA, la scadenza (`exp`) e l'issuer (`iss`) contro il realm Keycloak configurato.
-4. **Restituzione payload**: Se la verifica ha successo, il payload del token (contenente `sub`, `preferred_username`, `roles` e gli altri claim OIDC standard) viene restituito come dizionario Python e iniettato nelle funzioni handler tramite `Depends(get_current_user)`.
-5. **Risposta 401**: In caso di token assente, scaduto, alterato o con firma non valida, viene sollevata una `HTTPException 401 Unauthorized` con header `WWW-Authenticate: Bearer`.
+#### Registrazione (`POST /utente/addUtente`) e Login (`POST /utente/login`)
 
-L'infrastruttura Keycloak è orchestrata localmente tramite il file `docker-compose.yml` nel modulo `autentication/`, che avvia un'istanza containerizzata del server per lo sviluppo e il test.
+- **Registrazione**: `KeycloakAdmin.create_user()` + `set_user_password(temporary=False)`;
+- **Login**: flusso **Direct Access Grants (OAuth 2.0 ROPC)** via `KeycloakOpenID.token()`, restituisce `access_token`, `refresh_token` e `expires_in`.
 
-### 4.10 Frontend Flutter — Home Page (`main.dart`)
+Entrambi gli endpoint consentono al Frontend di gestire il ciclo di autenticazione senza reindirizzare l'utente alle pagine predefinite di Keycloak.
 
-L'implementazione della schermata principale del frontend Flutter costituisce il punto di ingresso dell'applicazione lato utente. Il file `main.dart` è strutturato come un unico `StatefulWidget` (`MyHomePage`) che incapsula l'intero layout della Home Page, predisposto per il collegamento con le API REST del backend.
+### 4.10 Frontend Flutter — Architettura e Schermate
 
-#### Layout dell'AppBar
+| File/Modulo | Responsabilità |
+|-------------|---------------|
+| `main.dart` | Home Page: lista articoli, ricerca RAG/Normal, navigazione |
+| `api_config.dart` | Costante globale `baseUrl` |
+| `shared_preferences.dart` | Wrapper singleton persistenza token JWT |
+| `utils.dart` | Modello `Articolo` con `fromJson()` e `toMap()` |
+| `pages/login_page.dart` | Login e Registrazione animata |
+| `pages/upload_page.dart` | Upload articolo con drag-and-drop |
+| `pages/detail_page.dart` | Dettaglio articolo con chat AI e generazione PDF |
+| `pages/cronologia_page.dart` | Cronologia articoli utente |
+| `pages/info_page.dart` | Informazioni sull'applicazione |
 
-L'`AppBar` è organizzata orizzontalmente con quattro elementi funzionali, ordinati da sinistra a destra:
+#### Design System — Palette Cromatica (Regola 60-30-10)
+
+| Ruolo | Colore | Esadecimale |
+|-------|--------|-------------|
+| Sfondo (60%) | Grigio chiaro | `#F4F6F8` |
+| Principale (30%) | Marrone caldo | `#7F5539` |
+| Accento (10%) | Arancione vivace | `#FF6B35` |
+
+#### Home Page (`main.dart`)
+
+**AppBar**:
 
 | Posizione | Widget | Funzionalità |
-|-----------|--------|--------------|
+|-----------|--------|-------------|
 | Sinistra | `Text` (titolo) | Identità dell'applicazione ("NewsArchive") |
-| Centro-sinistra | `DropdownButton<String>` | Filtro per categoria tematica (Politica, Economia, Tecnologia, ecc.) con refresh automatico della lista al cambio selezione |
-| Centro-destra | `TextField` con `OutlineInputBorder` circolare | Barra di ricerca testuale con `onSubmitted` predisposto per invocare gli endpoint di ricerca |
-| Destra | `Switch` + `IconButton` (menu) | Toggle per alternare modalità di ricerca RAG (`POST /search/rag`) e Normale (`POST /search/generic`); icona hamburger per aprire il Drawer laterale |
+| Centro-sinistra | `DropdownButton<String>` | Filtro per categoria con refresh automatico |
+| Centro-destra | `TextField` con bordi circolari | Barra di ricerca RAG/Normal |
+| Destra | `Switch` + `IconButton` | Toggle modalità ricerca + menu Drawer |
 
-#### Drawer di Navigazione (endDrawer)
+**Drawer** (`endDrawer`): navigazione verso Login, Cronologia, Upload, Informazioni tramite `ListTile`.
 
-Il `Drawer`, posizionato a destra (`endDrawer`) e attivato dall'icona hamburger nell'AppBar, espone le seguenti azioni di navigazione tramite `ListTile`:
+**Body — Infinite Scroll**: `GridView.builder` con `ScrollController`. A 200px dal fondo, caricamento pagina successiva tramite `GET /articles?skip=N&limit=10&category=...`. `RefreshIndicator` per il reset completo.
 
-- **Log-in**: Predisposto per la navigazione verso il flusso di autenticazione Keycloak (OAuth2.0/OIDC).
-- **Cronologia articoli**: Accesso alla lista degli articoli visualizzati di recente.
-- **Upload articolo**: Navigazione verso la schermata di caricamento (`upload_screen.dart`).
-- **Informazioni**: Dialog `showAboutDialog` con dettagli sul sistema e versione.
+**Card Articolo**: immagine copertina (`cover_url`) via `Image.network`/`BoxFit.cover` (o placeholder contestuale), badge categoria, titolo (max 2 righe, `TextOverflow.ellipsis`), autore.
 
-#### Architettura Infinite Scroll
+#### Schermata Upload (`upload_page.dart`)
 
-Il corpo della pagina implementa un pattern di **Infinite Scroll** tramite `GridView.builder` con `ScrollController`. Il meccanismo opera come segue:
+- Drag-and-drop via `DropTarget` (`desktop_drop`) per documento e copertina;
+- `FilePicker` per selezione da filesystem;
+- `FilterChip` per categorie predefinite + categoria custom;
+- Chip tag rimovibili;
+- Verifica login all'avvio; upload disabilitato per utenti non autenticati.
 
-1. Un `ScrollController` monitora la posizione di scroll dell'utente.
-2. Quando la posizione raggiunge una soglia di 200 pixel dal fondo della lista, viene triggerato il caricamento della pagina successiva.
-3. La funzione `_loadArticles()` invoca (in produzione) `GET /articles?skip=N&limit=10&category=...`, accumulando i risultati nella lista locale `_articles`.
-4. Un `CircularProgressIndicator` (colori `coloreSecondario`/`colorePrincipale`) viene visualizzato come ultimo elemento della griglia durante il caricamento.
-5. Il `RefreshIndicator` (pull-to-refresh) consente il reset completo della lista.
+#### Schermata Dettaglio (`detail_page.dart`)
 
-#### Design della Card
+- Layout responsive (breakpoint 900px: colonne affiancate vs verticali);
+- Metadati manuali e analisi IA (parole chiave come chip, entità, riassunto);
+- Download file originale e generazione PDF metadati;
+- Chat AI contestuale: pannello laterale con auto-scroll, distinzione visiva messaggi, restrizione utenti autenticati.
 
-Ogni articolo è rappresentato da una `Card` con sfondo bianco, `elevation: 3`, ombra navy e `ClipBehavior.antiAlias`. Il layout verticale comprende:
+#### Schermata Cronologia (`cronologia_page.dart`)
 
-- **Parte superiore** (flex: 3): Immagine di copertina (`cover_url`) caricata via `Image.network` con `BoxFit.cover`. In assenza di immagine, un placeholder mostra un'icona contestuale alla categoria (es. bilancia per Politica, pallone per Sport) in `coloreSecondario`.
-- **Parte inferiore** (flex: 2): Badge di categoria con sfondo `coloreSecondario` trasparente, titolo dell'articolo in `colorePrincipale` (massimo 2 righe, `TextOverflow.ellipsis`) e nome dell'autore con icona persona.
-#### Implementazione UI di Autenticazione Animata (Custom Login)
-Per garantire un'esperienza utente (UX) fluida e coerente con il design system dell'applicazione, si è scelto di non reindirizzare l'utente alle pagine web predefinite del server Keycloak. È stata invece progettata e implementata un'interfaccia di Login e Registrazione custom, animata nativamente in Flutter (sfruttando i widget Stack, AnimatedPositioned e Transform). Il frontend raccoglie in modo sicuro le credenziali dell'utente e sfrutta il flusso Direct Access Grants (Resource Owner Password Credentials) di OAuth2, comunicando tramite API REST con l'Identity Provider per l'emissione del token JWT. Questa scelta architettonica maschera all'utente la complessità del sistema IAM (Identity and Access Management) sottostante, mantenendolo all'interno dell'ambiente cloud-native senza interruzioni di navigazione.
-## 5. Trasparenza IA e Metodologia di Sviluppo
-
-Il progetto è stato condotto secondo una metodologia "Review-driven development", prevedendo un'interazione iterativa con agenti basati su intelligenza artificiale generativa per la definizione architetturale e la generazione del codice sorgente.
-
-### Revisione IaC Bicep, Commenti e README
-Per la Componente IaC gestita tramite **Azure Bicep**, L'IA è stata guidata per eseguire le seguenti attività di refactoring e refinement:
-1. **Verifica della correttezza sintattica e strutturale:** Revisione dei file `.bicep` per garantire la piena conformità con le specifiche e le API ufficiali di Microsoft Azure.
-2. **Arricchimento della documentazione interna:** Inserimento di commenti esplicativi dettagliati all'interno degli script Bicep per rendere chiare le dipendenze tra risorse (es. associazione tra Storage Account, Cosmos DB Serverless e Azure AI Search).
-3. **Ottimizzazione delle prestazioni e dei costi:** Validazione delle opzioni di ridondanza (Standard LRS per Blob Storage) e dei tier serverless (per Cosmos DB) per minimizzare il consumo dei crediti del profilo Azure for Students.
-4. **Stesura della documentazione operativa:** Generazione del file `README.md` all'interno della cartella `azure/`, contenente le istruzioni dettagliate passo-passo per l'esecuzione dei comandi da Azure CLI (`az deployment group create`).
-
-### Verifica e Configurazione delle Variabili d'Ambiente (.env)
-Durante la fase di collegamento tra l'infrastruttura provvisionata su Azure e il backend Python, l'agente IA è stato impiegato per esaminare la mappatura dei parametri di configurazione:
-1. **Validazione e sintassi delle chiavi d'infrastruttura:** Verifica e cross-check tra i dati restituiti dai comandi Azure CLI (Connection String di Storage, Primary Key di Cosmos DB, Admin Key di AI Search, API Key di OpenAI, endpoint di servizio) e le variabili d'ambiente esposte dagli SDK Python (`azure-storage-blob`, `azure-cosmos`, `azure-search-documents`, `langchain-openai`). Questo intervento ha prevenuto errori formali nella formattazione delle stringhe di connessione e garantito l'adozione delle convenzioni di naming previste dal backend.
-2. **Sicurezza e Gestione dei Segreti:** L'agente ha verificato la presenza delle regole di esclusione all'interno del file `.gitignore` per evitare l'upload accidentale del file `backend/.env` contenente credenziali riservate nella repository remota. Contestualmente, è stato generato il file `backend/.env.example`, privo di informazioni sensibili, come modello di riferimento per il versionamento del codice.
-
-
+- `GET /articles/me` con token Bearer; infinite scroll su `ListView.builder`;
+- Ricerca per keyword (`?keyword=...`); eliminazione con dialog di conferma; accesso all'aggiornamento.
 
 ---
-### 5.1 Registro delle Interazioni (Log degli Agenti AI)
-| Feature / Task | Agente Utilizzato | Prompt Principale Fornito | Sintesi Risposta / Codice Generato |
+
+## 5. Funzionalità Extra-Traccia
+
+La presente sezione documenta le implementazioni che superano i requisiti minimi di traccia, evidenziandone l'utilità pratica e il grado di innovazione apportato al sistema.
+
+### 5.1 Generazione PDF dei Metadati Articolo (Lato Client)
+
+**Descrizione**: Nella schermata di Dettaglio, l'utente autenticato può generare e scaricare un documento PDF riassuntivo dell'articolo, contenente tutti i metadati (manuali e AI), l'immagine di copertina e il riassunto LLM.
+
+**Implementazione**: La generazione avviene interamente **lato client** tramite la libreria `pdf` (`^3.10.8`) di Flutter. Il processo comprende: recupero copertina via `GET /articles/{id}/cover` (accesso centralizzato, non URL diretto Blob); costruzione layout PDF con `pw.MultiPage`, tipografia (`Times`/`TimesBold`/`TimesItalic`), paginazione automatica e footer con numerazione; download automatico via API Web (`html.Blob`, `html.AnchorElement`) senza ricaricare la pagina.
+
+**Utilità e Innovazione**: Funzionalità premium per la condivisione e l'archiviazione off-line dei dati analitici in formato universale. L'approccio lato client elimina il carico elaborativo dal backend, costituendo un esempio di *edge-computing* applicato alla generazione documentale. Disponibile esclusivamente per utenti autenticati.
+
+### 5.2 Eliminazione Cascata Multi-Layer con Autorizzazione per Ownership
+
+**Descrizione**: `DELETE /articles/{id}/delete` elimina in modo sicuro e completo un articolo e tutte le sue risorse associate su tre sistemi di persistenza distinti.
+
+**Implementazione**: (1) `HTTP 404` se l'articolo non esiste; (2) `HTTP 403` se `article.user_id != current_user['sub']`; (3) eliminazione file Blob; (4) eliminazione copertina Blob; (5) eliminazione metadati e chunk Cosmos DB con restituzione del conteggio chunk; (6) eliminazione vettori AI Search con `chunk_id = {article_id}-chunk-{i}` deterministico.
+
+**Utilità e Innovazione**: La coerenza dei dati su tre sistemi di persistenza eterogenei (Blob Storage, Cosmos DB, AI Search) è un problema architetturale non banale. L'approccio garantisce l'assenza di dati orfani che potrebbero causare sprechi di storage o inquinare i risultati di ricerca vettoriale.
+
+### 5.3 Chat AI Contestuale per Articolo (`POST /search/article-chat`)
+
+**Descrizione**: Pannello di chat laterale nella schermata Dettaglio, con agente AI contestualmente consapevole dell'articolo correntemente letto dall'utente.
+
+**Implementazione Backend** (`generate_chat_answer`): il system message inietta `current_article_id`, distingue chunk dell'articolo corrente da chunk di altri articoli, segnala attivamente contenuti correlati nell'archivio. Applica regole di risposta più flessibili rispetto alla RAG generica.
+
+**Implementazione Frontend**: pannello laterale con lista messaggi (`isAi: true/false`), indicatore di caricamento `_isChatLoading`, auto-scroll animato dopo ogni messaggio, restrizione ad utenti autenticati.
+
+**Utilità e Innovazione**: Trasforma la schermata di dettaglio da visualizzazione statica a esperienza interattiva di esplorazione dell'archivio. La consapevolezza contestuale dell'agente consente domande naturali di approfondimento ("Spiega meglio questo concetto", "Ci sono altri articoli sull'argomento?") con risposte rilevanti e personalizzate.
+
+### 5.4 Aggiornamento Selettivo dei Metadati (`PUT /articles/{id}/update`)
+
+**Descrizione**: Aggiornamento parziale dei metadati manuali senza rieseguire la pipeline di upload e re-indicizzazione.
+
+**Implementazione**: `model_dump(exclude_unset=True)` estrae solo i campi forniti, applicandoli esclusivamente al sotto-documento `manual` via `replace_item()`. Protezione ownership identica all'eliminazione.
+
+**Utilità**: Correzione post-pubblicazione di metadati errati (titolo, autore) senza ri-elaborazione AI — operazione costosa in termini di crediti Azure OpenAI.
+
+### 5.5 Download Diretto del Documento Originale (`GET /articles/{id}/download`)
+
+**Descrizione**: Download del file grezzo nel formato originale (TXT, MD, JSON, DOCX, PDF) da Blob Storage, con preservazione del `Content-Type` e del filename originale.
+
+**Implementazione**: Recupero `blob_url` da Cosmos DB, estrazione filename, download bytes via `download_file()` (client asincrono), risposta `fastapi.Response` con `Content-Disposition: attachment`. Il Frontend usa Web API per il download senza navigazione.
+
+**Utilità e Innovazione**: Il routing del download attraverso il Backend centralizza il controllo di accesso: gli URL dei blob non sono esposti direttamente al client, e ogni operazione di accesso ai file è mediata dal backend con possibilità di applicare policy di autorizzazione uniformi.
+
+### 5.6 Proxy Backend per Copertine (`GET /articles/{id}/cover`)
+
+**Descrizione**: Proxy trasparente tra Frontend e container immagini Azure Blob Storage, senza esporre credenziali o URL interni al client.
+
+**Utilità**: Coerente con il principio di accesso centralizzato. Intercetta richieste a immagini placeholder (URL contenente `"placeholder"`) restituendo `HTTP 404`, gestendo uniformemente l'assenza di copertina.
+
+### 5.7 UI di Login e Registrazione Animata (Custom Flutter)
+
+**Descrizione**: Interfaccia di autenticazione Flutter custom animata, che evita il reindirizzamento alle pagine predefinite di Keycloak.
+
+**Implementazione**: Toggle animato tra form Login e Registrazione; validazione locale con dialog informativi; `POST /utente/login` con persistenza `access_token`/`refresh_token` in `SharedPreferences`; `POST /utente/addUtente` per la registrazione; toggle visibilità password; supporto al parametro `popAfterLogin` per navigazione contestuale.
+
+**Utilità e Innovazione**: Mantiene l'esperienza utente coerente con il design system, mascherando la complessità IAM. Il flusso **Direct Access Grants** è appropriato per applicazioni client native di fiducia, in cui le credenziali sono inviate direttamente all'endpoint token del backend senza redirect browser.
+
+### 5.8 Drag-and-Drop per l'Upload di File
+
+**Descrizione**: `DropTarget` (`desktop_drop`) per documenti e immagini di copertina nella schermata Upload.
+
+**Implementazione**: Due aree di drop distinte con feedback visivo durante il trascinamento (`_isDraggingDoc`, `_isDraggingCover`). Compatibilità con `FilePicker` per alternare tra drag-and-drop e selezione tradizionale.
+
+**Utilità**: Migliora l'ergonomia su piattaforme desktop e web, riducendo il numero di click e avvicinando l'esperienza ai moderni strumenti di produttività.
+
+### 5.9 Deduplicazione Semantica Pre-Upload (Vettoriale)
+
+**Descrizione**: Doppia deduplicazione pre-upload: identità del titolo (Cosmos DB) e similarità semantica del contenuto (AI Search, soglia 0.90).
+
+**Motivazione Architetturale**: Il solo controllo sul titolo è insufficiente: articoli quasi identici con titoli diversi eluderebbero il controllo. La soglia del 90% di similarità coseno nello spazio degli embedding rileva contenuti riformulati o leggermente modificati. L'esecuzione prima dell'upload su Blob risparmia sia storage che crediti OpenAI per contenuti destinati al rifiuto.
+
+---
+
+## 6. Trasparenza IA e Metodologia di Sviluppo
+
+Il progetto è stato condotto secondo una metodologia *"Review-driven development"*: interazione iterativa con agenti AI per la definizione architetturale, la code review e il raffinamento del codice. Gli agenti AI sono stati impiegati come strumenti di supporto e verifica; la logica applicativa, il design architetturale e la scrittura del codice principale sono stati condotti dallo studente.
+
+### 6.1 Registro delle Interazioni (Log degli Agenti AI)
+
+| Feature / Task | Agente | Prompt Principale | Sintesi Azione |
 |---|---|---|---|
- Revisione IaC Bicep, Commenti e README | Claude Sonnet 4.6 | "Agente, verifica la correttezza e l'ottimizzazione dei file Bicep per l'infrastruttura Azure. Aggiungi commenti esplicativi dettagliati all'interno del codice `.bicep` e genera il file `README.md` con le istruzioni per il deploy tramite Azure CLI." | Validazione degli script Bicep con inserimento di commenti esplicativi sulle singole risorse. Generazione del file `README.md` contenente i comandi `az login`, `az group create` e `az deployment` per il provisioning automatico dell'ambiente. |
- Refactoring modulo Bicep OpenAI — conformità region policy italynorth | Claude Sonnet 4.6 | "Adatta la configurazione Bicep per la risorsa Azure OpenAI a causa delle restrizioni della policy della sottoscrizione Azure for Students UniCal (italynorth obbligatorio, regioni esterne bloccate). Il modulo deve creare solo l'account base; i deployment dei modelli vengono gestiti manualmente via Azure AI Studio." | Refactoring di `openai.bicep`: rimossi i blocchi `embeddingDeployment` e `gptDeployment` (lasciati in commento per riferimento); aggiornati `main.bicep` (default `openAiLocation = 'italynorth'`), `parameters.json`, `README.md` (aggiunta sezione deployment manuale con tabella modelli), `implementation_plan.md` (Task 1.5 completato) e `Relazione_Progetto.md` (sezione Azure OpenAI + log). |
- Verifica formattazione e mappatura file .env | Claude Sonnet 4.6 | "Agente, ho completato il deploy Bicep ed eseguito i comandi Azure CLI. Genera o aggiorna il file backend/.env e backend/.env.example, mappando le variabili d'ambiente necessarie per il backend Python secondo la struttura esposta da Bicep (Storage, Cosmos, Search, OpenAI, ACR) e verificando il .gitignore." | Controllata e validata la sintassi delle variabili d'ambiente. Verificata la corrispondenza con i client del backend Python e generato il file .env.example privo di credenziali segrete per il commit su Git. |
- Code Review e Task 2.4 — Generazione metadati AI (LangChain + Azure OpenAI) | Claude Sonnet 4.6 | "Esegui code review architetturale e funzionale del Task 2.4. Verifica l'integrazione con AzureChatOpenAI e LangChain, l'uso di Pydantic per output JSON strutturato, la gestione degli errori e i conflitti con il runtime asincrono di FastAPI. Aggiorna implementation_plan.md e scrivi la sezione 4.5 della relazione." | Identificati e corretti 3 bug: (1) `await` mancante su `generate_ai_metadata()` in `articles.py` (coroutine mai eseguita); (2) nome variabile errato `AZURE_OPENAI_API_KEY` → `AZURE_OPENAI_KEY` in `ai_service.py`; (3) deployment hardcoded `"gpt-4.1-mini"` sostituito con `settings.AZURE_OPENAI_CHAT_DEPLOYMENT`. Migliorata gestione errori con `HTTPException 503`.|
- Code Review Task 2.6 — Indicizzazione vettoriale su Azure AI Search (`search_service.py`) | Claude Sonnet 4.6 | "Esegui la code review della funzione `index_chunk_to_ai_search`. Verifica l'uso corretto di `zip()` ed `enumerate()`, la serializzazione Pydantic con `model_dump()`, la gestione asincrona del client Search e la presenza del blocco TEST_MODE. Aggiorna la sezione 4.6 della relazione." | **Codice scritto interamente dallo studente.** L'IA è stata utilizzata esclusivamente come strumento di code review e validazione. Identificati e corretti 4 bug: (1) import errato `azure.search.documents.SearchClient` (sincrono) → `azure.search.documents.aio.SearchClient` (asincrono); uso del client sincrono con `await` e `async with` genera `TypeError` a runtime bloccando l'event loop di FastAPI; (2) chiave di configurazione inesistente `settings.AZURE_SEARCH_KEY` → `settings.AZURE_SEARCH_ADMIN_KEY` (nome corretto in `config.py`); (3) assenza del blocco `TEST_MODE` presente invece in tutti gli altri servizi; (4) rientro del codice errato (indentazione a doppio livello della funzione). |
-| Scelta del protocollo di sicurezza | Gemini 1.5 Pro | "Ragiona come un Software Engineer professionista e valuta quale approccio per gestire l'autenticazione di un utente si adegua al mio progetto tra JWT e MSAL." | Analisi comparativa tra MSAL (Azure Entra ID B2C) e JWT custom. Stesura del documento di decisione architetturale (ADR) con scelta motivata verso JWT tramite FastAPI e Cosmos DB per dimostrare competenze backend, mantenere coesione dei dati ed evitare over-engineering infrastrutturale. |
-| Implementazione Keycloak e Autenticazione | Gemini 1.5 Pro | "Ragiona come un web Security expert professionista e implementa i servizi di keycloack inoltre effettua una core rewie sull'aggiunta dell'upload dei file con immagini" | Code review funzionale per l'integrazione dell'upload delle copertine (`cover_url`) su Blob Storage e fix dei deadlock asincroni. Check architetturale di Keycloak come Identity Provider su infrastruttura Azure, abbandonando l'approccio Custom JWT per rispettare la best practice "Don't roll your own crypto" aggirando i limiti della sottoscrizione studentesca e implementazione delle funzioni get_current_user e get_keycloak_public_key nel file keycloak_service.py . |
-| Generazione e Refinement UI Home Page Flutter (Task 4.1) | Claude Opus 4.6 | \"Agisci come Senior Flutter Developer. Implementa la UI della Home Page in `main.dart` seguendo il wireframe: AppBar con titolo, dropdown filtri, barra di ricerca e switch RAG/Normal; Drawer laterale destro con Login, Cronologia, Upload e Info; body con Infinite Scroll su GridView.builder di Card (cover_url, titolo, autore). Definisci `colorePrincipale` e `coloreSecondario` globali, raggruppa i controlli dell'AppBar in un Container unico con sfondo secondario e bordi arrotondati, applica elevation all'AppBar.\" | Implementazione iterativa del file `main.dart`: (1) generazione iniziale della struttura completa (AppBar, endDrawer, GridView.builder con Infinite Scroll e Card); (2) refactoring AppBar: controlli centrati, barra di ricerca allargata; (3) introduzione sistema colori globale (`colorePrincipale = #1B1B1B`, `coloreSecondario = #9B111E`) con `ThemeData` configurato, `AppBar` con `elevation: 6`, controlli raggruppati in `Container` pill-shaped con sfondo `coloreSecondario` e separatori verticali, label switch posizionata a destra; (4) estensione coerenza cromatica a tutto il body (Card, Drawer, loading indicators, empty state, placeholder). Dati mock predisposti per sostituzione con chiamate HTTP a `GET /articles` e `POST /search/rag`. |
+| Revisione IaC Bicep, Commenti e README | Claude Sonnet 4.6 | "Verifica la correttezza dei file Bicep. Aggiungi commenti esplicativi e genera il README con istruzioni per Azure CLI." | Validazione Bicep con commenti esplicativi. Generazione README con comandi `az login`, `az group create`, `az deployment`. |
+| Refactoring Bicep OpenAI — conformità region policy `italynorth` | Claude Sonnet 4.6 | "Adatta il modulo Bicep OpenAI ai vincoli Azure for Students UniCal (italynorth obbligatorio). Solo account base; deployment modelli via Azure AI Studio." | Refactoring `openai.bicep`: rimossi blocchi deployment modelli (lasciati in commento per riferimento); aggiornati `main.bicep`, `parameters.json`, `README.md` e la relazione. |
+| Verifica formattazione e mappatura `.env` | Claude Sonnet 4.6 | "Genera `backend/.env` e `backend/.env.example` mappando le variabili d'ambiente secondo la struttura Bicep." | Validazione sintassi variabili d'ambiente. Verifica corrispondenza con SDK Python. Generazione `.env.example` privo di credenziali. Verifica `.gitignore`. |
+| Code Review Task 2.4 — Metadati AI (LangChain + Azure OpenAI) | Claude Sonnet 4.6 | "Code review Task 2.4: integrazione AzureChatOpenAI, Pydantic structured output, gestione errori, conflitti runtime asincrono FastAPI." | Identificati e corretti 3 bug: (1) `await` mancante su `generate_ai_metadata()` in `articles.py`; (2) nome variabile errato `AZURE_OPENAI_API_KEY` → `AZURE_OPENAI_KEY`; (3) deployment hardcoded `"gpt-4.1-mini"` sostituito con `settings.AZURE_OPENAI_CHAT_DEPLOYMENT`. |
+| Code Review Task 2.6 — Indicizzazione AI Search | Claude Sonnet 4.6 | "Code review `index_chunk_to_ai_search`: uso di `zip()`, `enumerate()`, serializzazione Pydantic, client asincrono, blocco TEST_MODE." | **Codice scritto interamente dallo studente.** Identificati e corretti 4 bug: (1) import sincrono → asincrono (`aio.SearchClient`); (2) chiave errata `AZURE_SEARCH_KEY` → `AZURE_SEARCH_ADMIN_KEY`; (3) assenza blocco TEST_MODE; (4) indentazione errata. |
+| Scelta del protocollo di sicurezza (ADR) | Gemini 1.5 Pro | "Valuta JWT custom vs MSAL per il progetto." | Analisi comparativa. Scelta motivata verso Keycloak+OIDC per il principio "Don't roll your own crypto", aggiramento dei limiti della sottoscrizione accademica. |
+| Implementazione Keycloak e review upload copertine | Gemini 1.5 Pro | "Implementa i servizi Keycloak e code review sull'upload con immagini." | Fix deadlock asincroni upload. Implementazione `get_current_user` e `get_keycloak_public_key`. Verifica architetturale integrazione Keycloak. |
+| Generazione e Refinement UI Home Page Flutter (Task 4.1) | Claude Opus 4.6 | "Implementa la Home Page in `main.dart`: AppBar, Drawer, Infinite Scroll su GridView.builder di Card." | Implementazione iterativa `main.dart`: struttura completa; sistema colori globale (`colorePrincipale = #1B1B1B`, `coloreSecondario = #9B111E`); coerenza cromatica estesa. Dati mock per sostituzione con chiamate HTTP. |
+| Implementazione UI Login Animata (Frontend) | Gemini 1.5 Pro | "Adatta una schermata di login animata al mio codice Flutter per non usare le pagine predefinite di Keycloak." | Trasposizione animazione in widget Flutter nativi. Adattamento al design system. Fix bug overlay nei field di testo. Preparazione per integrazione Direct Access Grants. |
 
-| Implementazione UI Login Animata (Frontend) | Gemini 1.5 Pro | \"Ho trovato sul web una schermata di login animata. Riusciresti ad adattarla al mio codice Flutter per non usare la schermata preimpostata di Keycloak che risulta scarna?\" | Trasposizione di un'animazione complessa basata su offset (HTML/CSS) in widget Flutter nativi. Adattamento dell'interfaccia al design system custom e risoluzione dei bug di overlay (z-index) nei field di testo. Preparazione del form per l'integrazione API Direct Access Grants verso Keycloak. |
+---
 
-## 6. Conclusioni e Sviluppi Futuri
-*(Da completare a fine progetto)*
+## 7. Conclusioni e Sviluppi Futuri
+
+### 7.1 Conclusioni
+
+Il progetto ha realizzato con successo un sistema cloud-native completo per la gestione e la ricerca intelligente di un archivio di notizie, basato interamente su Microsoft Azure. L'architettura adottata — caratterizzata dalla separazione dei layer di presentazione, orchestrazione e persistenza — garantisce scalabilità, manutenibilità e sicurezza. L'integrazione della pipeline RAG con Azure OpenAI e Azure AI Search consente un accesso semantico ai contenuti di qualità editoriale, superando significativamente le capacità di un sistema di ricerca tradizionale per parola chiave.
+
+Le scelte tecnologiche adottate (FastAPI per le prestazioni asincrone, LangChain per l'orchestrazione AI, Flutter per la cross-platform UI, Keycloak per l'IAM standard) sono state selezionate e motivate per massimizzare la qualità del sistema nel rispetto dei vincoli infrastrutturali della sottoscrizione accademica.
+
+Le **funzionalità extra-traccia** implementate — chat AI contestuale, generazione PDF lato client, eliminazione cascata multi-layer, drag-and-drop, deduplicazione semantica vettoriale, proxy backend per copertine, aggiornamento selettivo dei metadati — arricchiscono significativamente il valore applicativo del sistema, trasformandolo da una prova di concetto architetturale in un'applicazione fruibile con caratteristiche di prodotto reale.
+
+### 7.2 Sviluppi Futuri
+
+- **Containerizzazione e Deploy su Azure Container Apps**: sfruttare il modulo `acr.bicep` predisposto per un deployment scalabile con auto-scaling in base al numero di richieste;
+- **Hybrid Search avanzato**: combinare ricerca vettoriale e full-text BM25 per migliorare la precisione su query brevi o con termini specifici;
+- **Re-indicizzazione vettoriale automatica**: ricalcolo degli embedding al momento dell'aggiornamento del testo tramite `PUT /articles/{id}/update`;
+- **Supporto formati aggiuntivi**: estensione di `ingestion_service.py` per HTML, EPUB, PPTX;
+- **Refresh Token automatico**: logica di refresh del JWT prima della scadenza, eliminando la necessità di ri-login.
+
+---
+
+*Documento redatto nell'ambito del corso di Sistemi Distribuiti e Cloud Computing — Università della Calabria.*
+*Data ultima revisione: Settembre 2026.*
