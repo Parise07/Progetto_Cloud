@@ -100,3 +100,16 @@ def login_user(username: str, password: str):
         raise HTTPException(status_code=401, detail="Username o password non validi")
 
 
+def refresh_user_token(refresh_token: str):
+    """
+    Metodo che ha il compito di rigenerare l'access_token dato il suo refresh token
+    :parameter refresh_token str:
+    """
+    try:
+        new_tokens = keycloak_openid.refresh_token(refresh_token)
+        print("Token aggiornato con successo in background.")
+        return new_tokens
+    except KeycloakError as e:
+        print(f"Errore durante il refresh del token: {e}")
+        raise HTTPException(status_code=401, detail="Refresh token non valido o scaduto. Effettuare di nuovo il login.")
+

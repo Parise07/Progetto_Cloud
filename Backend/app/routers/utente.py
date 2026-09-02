@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from autentication.keycloack_service import addUtente
+from autentication.keycloack_service import addUtente, refresh_user_token
 
 from autentication.keycloack_service import login_user
 
@@ -20,6 +20,9 @@ class PasswordResetRequest(BaseModel):
     email: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
 @router.post("/addUtente")
 async def registra_utente(utente: UtenteRegistration):
     # Chiamiamo la funzione del servizio
@@ -35,4 +38,8 @@ async def registra_utente(utente: UtenteRegistration):
 async def login(utente: UtenteLogin):
     token_response = login_user(username=utente.username, password=utente.password)
     return token_response
+
+@router.post("/refresh", summary="Genera un nuovo access token")
+async def refresh_token_endpoint(request: RefreshRequest):
+    return refresh_user_token(request.refresh_token)
 
