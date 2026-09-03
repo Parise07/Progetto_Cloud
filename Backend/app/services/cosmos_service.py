@@ -5,6 +5,7 @@ from app.azure_clients import cosmos_client
 database = cosmos_client.get_database_client(settings.COSMOS_DATABASE_NAME)
 articles_container = database.get_container_client(settings.COSMOS_ARTICLES_CONTAINER)
 chunks_container = database.get_container_client(settings.COSMOS_CHUNKS_CONTAINER)
+categories_container= database.get_container_client(settings.COSMOS_CATEGORIES_CONTAINER)
 
 def save_chunks_metadata(article_id: str, chunks: list[str]):
     """
@@ -252,3 +253,57 @@ def update_article_metadata(article_id: str, new_data: dict) -> dict:
     except CosmosHttpResponseError as e:
         print(f"Errore durante la modifica su Cosmos DB: {e}")
         raise HTTPException(status_code=500, detail="Impossibile aggiornare l'articolo")
+
+
+def get_all_categories() -> list[str]:
+    """
+    Funzione che restituisce l'elenco di tutte le categorie esistenti,
+    ordinate alfabeticamente.
+    Le categorie sono mantenute in un container dedicato ("categories")
+    proprio per evitare di dover scansionare/interrogare tutti gli
+    articoli ogni volta che serve conoscere le categorie disponibili:
+    il container è piccolo e la lettura è quindi economica e veloce.
+    :return list[str]: lista dei nomi delle categorie
+    """
+    query = "SELECT c.name FROM c ORDER BY c.name ASC"
+    try:
+        results = categories_container.query_items(
+            query=query,
+            enable_cross_partition_query=True
+        )
+        return [item["name"] for item in results]
+    except CosmosHttpResponseError as e:
+        print(f"Errore durante il recupero delle categorie da Cosmos DB: {e}")
+        return []
+
+
+def add_category_if_not_exists(category_name: str) -> bool:
+    """
+    Funzione che, data una categoria, la salva nel container "categories"
+    solo se non esiste già (controllo case-insensitive tramite id normalizzato).
+    Il controllo è fatto con una point-read sull'id (partition key = id),
+    molto più economica di una query, così da poter chiamare questa
+    funzione anche più volte senza costi elevati.
+    :param category_name:
+    :return bool: True se è stata creata una nuova categoria, False se esisteva già o in caso di errore
+    """
+    if not category_name or not category_name.strip():
+        return False
+
+    normalized_name = category_name.strip()
+    category_id = normalized_name.lower()
+
+    try:
+        categories_container.read_item(item=category_id, partition_key=category_id)
+        return False  
+    except CosmosHttpResponseError as e:
+        if e.status_code != 404:
+            print(f"Errore durante il controllo della categoria su Cosmos DB: {e}")
+            return False
+
+    try:
+        categories_container.create_item(body={"id": category_id, "name": normalized_name})
+        return True
+    except CosmosHttpResponseError as e:
+        print(f"Errore durante il salvataggio della categoria su Cosmos DB: {e}")
+        return False

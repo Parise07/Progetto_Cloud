@@ -11,6 +11,7 @@ from app.services.cosmos_service import save_article_metadata, save_chunks_metad
 from app.services.ai_service import generate_ai_metadata, chunking, generate_embedding_for_chunks
 from app.services.ingestion_service import extract_text_from_file
 from app.services.cosmos_service import check_title_exists
+from app.services.cosmos_service import get_all_categories, add_category_if_not_exists
 from app.services.search_service import index_chunk_to_ai_search, check_similarity, delete_article_chunk
 from autentication.keycloack_service import get_current_user
 router = APIRouter()
@@ -39,36 +40,31 @@ async def upload_file(
     if check_title_exists(title):
         raise HTTPException(status_code=400, detail="titolo già esistente inserirne uno diverso ")
 
-    # id univoco per ogni articolo
     article_id = str(uuid.uuid4())
     extension = file.filename.split(".")[-1].lower() if "." in file.filename else "txt"
     blob_filename = f"{article_id}.{extension}"
 
-    #estrapolo id dell'utente dal token
     user_id= current_user.get("sub")
 
-    # 2. Leggo il file e parser
     file_bytes = await file.read()
     parser_file = extract_text_from_file(file_bytes, blob_filename)
 
-    #3 genero un vettore civeta
     vector= parser_file[:500]
     vector_embedding = await generate_embedding_for_chunks([vector])
     extract_vector= vector_embedding[0]
 
-    # 2° controllo di similarità fatto così in basso per poter effettuare il chuncking una sola volta
     if await check_similarity(extract_vector):
         raise HTTPException(status_code=400, detail=" Documento molto simile a uno già esistente")
 
-
-    # 4. carico file su blob
     blob_url = await uploaded_file_to_blob(blob_filename, file_bytes)
     cover_url = await upload_cover(article_id=article_id, cover_image=cover_image)
 
 
-    # 5. Formatto i tag
     tag_list = [tag.strip() for tag in tags] if tags else []
     cat_list = [cat.strip() for cat in category] if category else []
+
+    for cat in cat_list:
+        add_category_if_not_exists(cat)
 
     manual_meta = ManualMetadata(
         title=title,
@@ -79,7 +75,6 @@ async def upload_file(
     )
 
     metadata_ia = await generate_ai_metadata(parser_file)
-    # 6. Creo il JSON da caricare in cosmos
     article_doc = ArticleDocument(
         id = article_id,
         user_id= user_id,
@@ -92,11 +87,9 @@ async def upload_file(
     )
 
 
-   # Salvataggio su cosmos nella raccolta articles
     chunks = chunking(parser_file)
     save_article_metadata(article_doc.model_dump(mode='json'))
 
-    # salvo i chunck nella raccolta chunks
     save_chunks_metadata(article_id=article_id, chunks=chunks)
     embeddings = await generate_embedding_for_chunks(chunks)
 
@@ -135,6 +128,17 @@ async def get_articles_by_user_id(keyword: str = Query(None, description="Parola
         "status": "success",
         "returned_items": len(articles),
         "articles": articles
+    }
+
+@router.get("/categories", summary="Lista di tutte le categorie disponibili")
+async def list_categories():
+    '''Restituisce l'elenco completo delle categorie salvate, così il frontend
+    non deve mai ricostruirlo interrogando tutti gli articoli.'''
+    categories = get_all_categories()
+    return {
+        "status": "success",
+        "returned_items": len(categories),
+        "categories": categories
     }
 
 @router.get("/articles/{article_id}", summary="Scheda Articolo")
@@ -215,6 +219,13 @@ async def update_article(
     if not update_dict:
         return {"status": "success",
                 "message": "Nessuna modifica richiesta"}
+
+
+    new_categories = update_dict.get("category")
+    if new_categories:
+        for cat in new_categories:
+            add_category_if_not_exists(cat)
+
     update_article_metadata(article_id, update_dict)
     return {"status": "success",
             "message": "Articolo aggiornato con successo"}

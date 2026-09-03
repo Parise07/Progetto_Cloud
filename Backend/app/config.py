@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     COSMOS_DATABASE_NAME: str = "newsdb"
     COSMOS_ARTICLES_CONTAINER: str = "articles"
     COSMOS_CHUNKS_CONTAINER: str = "chunks"
+    COSMOS_CATEGORIES_CONTAINER: str = "categories"
 
     #Azure AI Search
     AZURE_SEARCH_ENDPOINT: str

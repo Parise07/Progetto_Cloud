@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:frontend/pages/cronologia_page.dart';
@@ -6,6 +8,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import '../api_config.dart';
 import '../main.dart';
 import '../shared_preferences.dart';
+import 'package:frontend/categorypicker.dart';
 import 'info_page.dart';
 import 'login_page.dart';
 
@@ -31,7 +34,10 @@ class _UploadScreenState extends State<UploadScreen> {
   final List<String> _selectedCategories = [];
   final List<String> _selectedTags = [];
 
-  final List<String> _defaultCategories = ['Politica', 'Economia', 'Tecnologia', 'Sport', 'Cultura', 'Scienza'];
+  // Lista categorie caricata dal backend (container "categories"), così
+  // mostriamo sempre tutte le categorie realmente esistenti, comprese
+  // quelle aggiunte manualmente da altri utenti.
+  List<String> _categories = [];
   bool _isCustomCategory = false;
   bool _isLogin= false;
 
@@ -48,6 +54,25 @@ class _UploadScreenState extends State<UploadScreen> {
   void initState() {
     super.initState();
     _checkLoginStatus();
+    _loadCategories();
+  }
+
+  /// Recupera l'elenco di tutte le categorie disponibili da GET /categories
+  Future<void> _loadCategories() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/categories'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> items = data['categories'] ?? [];
+        setState(() {
+          _categories = items.map((e) => e.toString()).toList();
+        });
+      } else {
+        debugPrint('Errore caricamento categorie: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Errore di connessione HTTP durante il caricamento categorie: $e');
+    }
   }
 
   @override
@@ -468,24 +493,34 @@ class _UploadScreenState extends State<UploadScreen> {
                   }
                 },
               )
-                  : DropdownButtonFormField<String>(
-                icon: const Icon(Icons.arrow_drop_down, color: colorePrincipale),
-                decoration: InputDecoration(
-                  labelText: 'Aggiungi una categoria',
-                  prefixIcon: Icon(Icons.category_outlined, color: colorePrincipale.withAlpha(150), size: 20),
-                  filled: true, fillColor: Colors.white,
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colorePrincipale.withAlpha(30))),
-                ),
-                items: [..._defaultCategories, 'Altro...'].map((String category) {
-                  return DropdownMenuItem<String>(value: category, child: Text(category, style: const TextStyle(color: colorePrincipale)));
-                }).toList(),
-                onChanged: (String? newValue) {
-                  if (newValue == 'Altro...') {
+                  : InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  final String? selected = await showCategoryPicker(
+                    context,
+                    categories: _categories,
+                    showAddCustomOption: true,
+                    title: 'Aggiungi una categoria',
+                  );
+                  if (selected == kCustomCategoryOption) {
                     setState(() => _isCustomCategory = true); // Mostra campo testuale
-                  } else if (newValue != null && !_selectedCategories.contains(newValue)) {
-                    setState(() => _selectedCategories.add(newValue)); // Aggiunge il chip
+                  } else if (selected != null && !_selectedCategories.contains(selected)) {
+                    setState(() => _selectedCategories.add(selected)); // Aggiunge il chip
                   }
                 },
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: 'Aggiungi una categoria',
+                    prefixIcon: Icon(Icons.category_outlined, color: colorePrincipale.withAlpha(150), size: 20),
+                    suffixIcon: const Icon(Icons.arrow_drop_down, color: colorePrincipale),
+                    filled: true, fillColor: Colors.white,
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: colorePrincipale.withAlpha(30))),
+                  ),
+                  child: Text(
+                    'Seleziona una categoria...',
+                    style: TextStyle(color: colorePrincipale.withAlpha(150), fontSize: 14),
+                  ),
+                ),
               ),
             ),
             // Bottone "X" per annullare l'inserimento manuale e tornare al Dropdown

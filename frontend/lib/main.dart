@@ -10,6 +10,7 @@ import 'api_config.dart';
 import 'pages/detail_page.dart';
 import 'pages/info_page.dart';
 import 'pages/login_page.dart';
+import 'package:frontend/categorypicker.dart';
 import 'package:http/http.dart' as http;
 
 
@@ -81,24 +82,36 @@ class _MyHomePageState extends State<MyHomePage> {
 
   final List<Articolo> _articles = [];
 
-  // Lista categorie drop down
-  final List<String> _categories = [
-    'Tutte',
-    'Politica',
-    'Economia',
-    'Tecnologia',
-    'Sport',
-    'Cultura',
-    'Scienza',
-    'Altro',
-  ];
+  // Lista categorie caricata dal backend (container "categories"),
+  // così l'elenco resta sempre aggiornato con le categorie realmente esistenti
+  // senza doverle ricercare/ricostruire scansionando tutti gli articoli.
+  List<String> _categories = [];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _checkLoginStatus();
+    _loadCategories();
     _loadArticles(); // Caricamento iniziale
+  }
+
+  /// Recupera l'elenco di tutte le categorie disponibili da GET /categories
+  Future<void> _loadCategories() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/categories'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> items = data['categories'] ?? [];
+        setState(() {
+          _categories = items.map((e) => e.toString()).toList();
+        });
+      } else {
+        debugPrint('Errore caricamento categorie: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Errore di connessione HTTP durante il caricamento categorie: $e');
+    }
   }
 
   @override
@@ -112,7 +125,7 @@ class _MyHomePageState extends State<MyHomePage> {
   /// della lista, viene triggerato il caricamento della pagina successiva.
   void _onScroll() {
     if (_scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200 &&
+        _scrollController.position.maxScrollExtent - 200 &&
         !_isLoading &&
         _hasMore) {
       _loadArticles();
@@ -121,9 +134,9 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _checkLoginStatus() async{
     String? accessToken = SharedPreferenceManager.instance.getString('access');
-     setState(() {
-       _isLogin= accessToken != null;
-     });
+    setState(() {
+      _isLogin= accessToken != null;
+    });
   }
 
   /// Carica gli articoli (mock). In produzione, questa funzione invocherà
@@ -156,11 +169,11 @@ class _MyHomePageState extends State<MyHomePage> {
           debugPrint('Errore caricamento articoli: ${response.statusCode}');
         });
       }
-      } catch (e) {
-        setState(() {
-          _isLoading=false;
-          debugPrint('Errore di connessione HTTP: $e');
-        });
+    } catch (e) {
+      setState(() {
+        _isLoading=false;
+        debugPrint('Errore di connessione HTTP: $e');
+      });
     }
 
   }
@@ -189,46 +202,46 @@ class _MyHomePageState extends State<MyHomePage> {
         : '${ApiConfig.baseUrl}/search/generic';
 
     try{
-        final Map<String, dynamic> requestBody = _isRagMode
-        ? {'question': query.trim()}
-        :  {'keyword': query.trim()};
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(requestBody),
-        );
-        if (response.statusCode == 200){
-          final Map<String, dynamic> responseData = jsonDecode(response.body);
-          setState(() {
-            if(_isRagMode){
-              if(!_isLogin) {
-                showErrorDialog(
-                    "Per poter utilizzare la ricerca RAG hai bisogno di un account. Accedi o registrati .");
-                return ;
-              }else {
-                _ragAnswer = responseData['answer'] ?? "Nessuna risposta.";
-                final List<
-                    dynamic> relevant_chunk = responseData['relevant_chunks'] ??
-                    [];
-                _articles.addAll(relevant_chunk.map((item) =>
-                    Articolo.fromJson(item as Map<String, dynamic>)).toList());
-                _hasMore = false;
-                _isLoading = false;
-              }
-            }else{
-              _ragAnswer=null;
-              final List<dynamic> results= responseData ['results'] ?? [];
-              _articles.addAll(results.map((item) => Articolo.fromJson(item as Map<String, dynamic>)).toList());
+      final Map<String, dynamic> requestBody = _isRagMode
+          ? {'question': query.trim()}
+          :  {'keyword': query.trim()};
+      final response = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(requestBody),
+      );
+      if (response.statusCode == 200){
+        final Map<String, dynamic> responseData = jsonDecode(response.body);
+        setState(() {
+          if(_isRagMode){
+            if(!_isLogin) {
+              showErrorDialog(
+                  "Per poter utilizzare la ricerca RAG hai bisogno di un account. Accedi o registrati .");
+              return ;
+            }else {
+              _ragAnswer = responseData['answer'] ?? "Nessuna risposta.";
+              final List<
+                  dynamic> relevant_chunk = responseData['relevant_chunks'] ??
+                  [];
+              _articles.addAll(relevant_chunk.map((item) =>
+                  Articolo.fromJson(item as Map<String, dynamic>)).toList());
               _hasMore = false;
               _isLoading = false;
             }
-          });
-        }else{
-          setState(() {
+          }else{
+            _ragAnswer=null;
+            final List<dynamic> results= responseData ['results'] ?? [];
+            _articles.addAll(results.map((item) => Articolo.fromJson(item as Map<String, dynamic>)).toList());
+            _hasMore = false;
             _isLoading = false;
-          });
-          print('Errore nel recupero dei prodotti: ${response.statusCode}');
-        }
+          }
+        });
+      }else{
+        setState(() {
+          _isLoading = false;
+        });
+        print('Errore nel recupero dei prodotti: ${response.statusCode}');
+      }
     }catch(e){
       setState(() {
         _isLoading = false;
@@ -263,96 +276,103 @@ class _MyHomePageState extends State<MyHomePage> {
 
             // container ricerca switch e categorie
             Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(20),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  // seleziona categoria
-                      child: DropdownButton<String>(
-                        value: _selectedCategory,
-                        icon: Icon(
-                          Icons.arrow_drop_down,
-                          color: Colors.white70,
-                          size: 20,
-                        ),
-                        dropdownColor: colorePrincipale,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(20),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              // seleziona categoria: apre il pannello con sezioni alfabetiche sticky
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () async {
+                  final String? selected = await showCategoryPicker(
+                    context,
+                    categories: _categories,
+                    showAllOption: true,
+                  );
+                  if (selected != null && selected != _selectedCategory) {
+                    setState(() {
+                      _selectedCategory = selected;
+                    });
+                    _refreshArticles();
+                  }
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6.0),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _selectedCategory,
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.white,
                           fontWeight: FontWeight.w500,
                         ),
-                        items: _categories.map((String category) {
-                          return DropdownMenuItem<String>(
-                            value: category,
-                            child: Text(category),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
-                          if (newValue != null) {
-                            setState(() {
-                              _selectedCategory = newValue;
-                            });
-                            _refreshArticles();
-                          }
-                        },
                       ),
+                      const Icon(
+                        Icons.arrow_drop_down,
+                        color: Colors.white70,
+                        size: 20,
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                    child:Container(
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(25),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-
-                      //barra di ricerca
-                      child: TextField(
-                        controller: _searchController,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Cerca articoli...',
-                          hintStyle: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 14,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            size: 20,
-                            color: Colors.white70,
-                          ),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: Icon(
-                                    Icons.clear,
-                                    size: 18,
-                                    color: Colors.white70,
-                                  ),
-                                  onPressed: () {
-                                    setState(() {
-                                      _ragAnswer = null;
-                                    });
-                                    _searchController.clear();
-                                    _refreshArticles();
-                                  },
-                                )
-                              : null,
-                          border:InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                        ),
-                        onSubmitted: _performSearch,
-                        onChanged: (value) => setState(() {}),
-                      ),
-                    ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child:Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(25),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                const SizedBox(width: 32),
-              // --- Switch RAG / Normal (label DOPO lo switch) ---
+
+                //barra di ricerca
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Cerca articoli...',
+                    hintStyle: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 14,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      size: 20,
+                      color: Colors.white70,
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                      icon: Icon(
+                        Icons.clear,
+                        size: 18,
+                        color: Colors.white70,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _ragAnswer = null;
+                        });
+                        _searchController.clear();
+                        _refreshArticles();
+                      },
+                    )
+                        : null,
+                    border:InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                  ),
+                  onSubmitted: _performSearch,
+                  onChanged: (value) => setState(() {}),
+                ),
+              ),
+            ),
+            const SizedBox(width: 32),
+            // --- Switch RAG / Normal (label DOPO lo switch) ---
             Row(
               children: [
                 Text(
@@ -459,25 +479,25 @@ class _MyHomePageState extends State<MyHomePage> {
             },),
             _buildDrawerItem(Icons.upload_file, 'Upload articolo', 'Carica file (PDF, TXT)',() {
               if(_isLogin){
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const  UploadScreen()),
-              );}else{
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const  UploadScreen()),
+                );}else{
                 showErrorDialog("É necessario il login per poter caricare un articolo. Accedi o registrati");
               }
             },),
             _buildDrawerItem(Icons.info_outline, 'Informazioni', 'Info sistema',() {
-            Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const InformazioniScreen()),
-            );
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InformazioniScreen()),
+              );
             },),
-           /// _buildDrawerItem(Icons.psychology_outlined, 'RAG', 'Risposte del sistema RAG',() {
-           ///   Navigator.push(
-           ///     context,
-           ///     MaterialPageRoute(builder: (context) => const  UploadScreen()),
-           ///   );
-           /// },),
+            /// _buildDrawerItem(Icons.psychology_outlined, 'RAG', 'Risposte del sistema RAG',() {
+            ///   Navigator.push(
+            ///     context,
+            ///     MaterialPageRoute(builder: (context) => const  UploadScreen()),
+            ///   );
+            /// },),
           ],
         ),
       ),

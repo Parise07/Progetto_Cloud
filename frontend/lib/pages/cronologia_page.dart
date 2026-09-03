@@ -5,6 +5,7 @@ import 'package:frontend/pages/upload_page.dart';
 import 'package:frontend/shared_preferences.dart';
 import 'package:frontend/utils.dart';
 import '../api_config.dart';
+import 'package:frontend/categorypicker.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -32,12 +33,35 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
   bool _isLoading = false;
   bool _hasMore = true;
 
+  // Lista categorie caricata dal backend (container "categories"),
+  // usata sia nel filtro che nel dialog di modifica dei metadati.
+  List<String> _categories = [];
+
   @override
   void initState(){
     super.initState();
     _scrollController.addListener(_onScroll);
     _checkLoginStatus();
+    _loadCategories();
     _loadArticles();
+  }
+
+  /// Recupera l'elenco di tutte le categorie disponibili da GET /categories
+  Future<void> _loadCategories() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/categories'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<dynamic> items = data['categories'] ?? [];
+        setState(() {
+          _categories = items.map((e) => e.toString()).toList();
+        });
+      } else {
+        debugPrint('Errore caricamento categorie: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Errore di connessione HTTP durante il caricamento categorie: $e');
+    }
   }
 
   void _onScroll() {
@@ -542,7 +566,6 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
     List<String> editTags = List.from(article.tags);
 
     bool isCustomCategory = false;
-    final List<String> defaultCategories = ['Politica', 'Economia', 'Tecnologia', 'Sport', 'Cultura', 'Scienza'];
     bool isSaving = false;
     bool? modificato = await showDialog<bool>(
       context: context,
@@ -608,18 +631,25 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
                                 }
                               },
                             )
-                                : DropdownButtonFormField<String>(
-                              decoration: const InputDecoration(labelText: 'Aggiungi categoria', prefixIcon: Icon(Icons.category)),
-                              items: [...defaultCategories, 'Altro...'].map((String category) {
-                                return DropdownMenuItem<String>(value: category, child: Text(category));
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                if (newValue == 'Altro...') {
+                                : InkWell(
+                              borderRadius: BorderRadius.circular(4),
+                              onTap: () async {
+                                final String? selected = await showCategoryPicker(
+                                  context,
+                                  categories: _categories,
+                                  showAddCustomOption: true,
+                                  title: 'Aggiungi una categoria',
+                                );
+                                if (selected == kCustomCategoryOption) {
                                   setDialogState(() => isCustomCategory = true);
-                                } else if (newValue != null && !editCategories.contains(newValue)) {
-                                  setDialogState(() => editCategories.add(newValue));
+                                } else if (selected != null && !editCategories.contains(selected)) {
+                                  setDialogState(() => editCategories.add(selected));
                                 }
                               },
+                              child: InputDecorator(
+                                decoration: const InputDecoration(labelText: 'Aggiungi categoria', prefixIcon: Icon(Icons.category)),
+                                child: const Text('Seleziona una categoria...', style: TextStyle(fontSize: 14)),
+                              ),
                             ),
                           ),
                           if (isCustomCategory)
