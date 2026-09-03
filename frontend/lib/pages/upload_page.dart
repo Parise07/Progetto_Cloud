@@ -34,9 +34,7 @@ class _UploadScreenState extends State<UploadScreen> {
   final List<String> _selectedCategories = [];
   final List<String> _selectedTags = [];
 
-  // Lista categorie caricata dal backend (container "categories"), così
-  // mostriamo sempre tutte le categorie realmente esistenti, comprese
-  // quelle aggiunte manualmente da altri utenti.
+
   List<String> _categories = [];
   bool _isCustomCategory = false;
   bool _isLogin= false;
@@ -60,7 +58,7 @@ class _UploadScreenState extends State<UploadScreen> {
   /// Recupera l'elenco di tutte le categorie disponibili da GET /categories
   Future<void> _loadCategories() async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/categories'));
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/articles/categories'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> items = data['categories'] ?? [];

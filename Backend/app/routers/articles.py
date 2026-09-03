@@ -118,6 +118,18 @@ async def list_articles(
         "skip": skip,
         "limit": limit
     }
+
+@router.get("/articles/categories", summary="Lista di tutte le categorie disponibili")
+async def list_categories():
+    '''Restituisce l'elenco completo delle categorie salvate, così il frontend
+    non deve mai ricostruirlo interrogando tutti gli articoli.'''
+    categories = get_all_categories()
+    return {
+        "status": "success",
+        "returned_items": len(categories),
+        "categories": categories
+    }
+
 @router.get("/articles/me", summary="Recupera gli articoli dell'utente loggato ")
 async def get_articles_by_user_id(keyword: str = Query(None, description="Parola chiave per la ricerca nella cronologia"),current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("sub")
@@ -130,16 +142,6 @@ async def get_articles_by_user_id(keyword: str = Query(None, description="Parola
         "articles": articles
     }
 
-@router.get("/articles/categories", summary="Lista di tutte le categorie disponibili")
-async def list_categories():
-    '''Restituisce l'elenco completo delle categorie salvate, così il frontend
-    non deve mai ricostruirlo interrogando tutti gli articoli.'''
-    categories = get_all_categories()
-    return {
-        "status": "success",
-        "returned_items": len(categories),
-        "categories": categories
-    }
 
 @router.get("/articles/{article_id}", summary="Scheda Articolo")
 async def get_article_details(article_id: str ):
