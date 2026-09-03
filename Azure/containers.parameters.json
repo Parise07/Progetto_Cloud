@@ -22,6 +22,12 @@
         },
         "openAiKey": {
             "value": "xE1zqNGJAIijShzc9q0srmXJfYs6bVA6rvQXZFbiPjq30BeSHpYqJQQJ99CHACgEuAYXJ3w3AAABACOGm5uZ"
+        },
+        "storageAccountName": {
+            "value": "pcloud3vwgrko3on"
+        },
+        "storageAccountKey": {
+            "value": "lAxTuXHNdcmDq0x5zXmL/NI+RPV1UPHGqNn6VPpk+k6gQN6PApSE3gIabO/WiYJwHJX7XFDyDd+m+AStO9oGxg=="
         }
     }
 }

@@ -130,6 +130,7 @@ Future<void> _loadArticle() async {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        debugPrint("response status ${response.statusCode} dati ${data}");
         final String answer = data['answer'] ?? "Nessuna risposta generata.";
         setState(() {
           _chatMessage.add({"text": answer, "isAi": true});

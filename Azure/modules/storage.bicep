@@ -59,7 +59,23 @@ resource articlesImageContainer 'Microsoft.Storage/storageAccounts/blobServices/
   }
 }
 
-// OUTPUT
+// FILE SHARE per la persistenza dei dati di Keycloak
+// per mantenere la persistenza del keycloack
+
+resource fileService 'Microsoft.Storage/storageAccounts/fileServices@2023-01-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource keycloakDataShare 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-01-01' = {
+  parent: fileService
+  name: 'keycloak-data'
+  properties: {
+    shareQuota: 5 
+  }
+}
+
 
 output storageAccountName string = storageAccount.name
 output blobEndpoint string = storageAccount.properties.primaryEndpoints.blob
+output keycloakShareName string = keycloakDataShare.name

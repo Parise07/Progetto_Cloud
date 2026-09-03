@@ -20,6 +20,14 @@ param openAiEndpoint string
 @secure()
 param openAiKey string
 
+@description('Nome dello storage account (output di storage.bicep) usato per il volume persistente di Keycloak')
+param storageAccountName string
+@description('Chiave dello storage account, usata per montare la File Share di Keycloak')
+@secure()
+param storageAccountKey string
+@description('Nome della File Share creata in storage.bicep per i dati di Keycloak')
+param keycloakShareName string = 'keycloak-data'
+
 resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01' = {
   name: 'newsarchive-containers'
   location: location
@@ -33,6 +41,16 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
       ]
       dnsNameLabel: dnsNameLabel
     }
+    volumes: [
+      {
+        name: 'keycloak-data-volume'
+        azureFile: {
+          shareName: keycloakShareName
+          storageAccountName: storageAccountName
+          storageAccountKey: storageAccountKey
+        }
+      }
+    ]
     containers: [
       {
         name: 'fastapi-backend'
@@ -60,6 +78,7 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
             { name: 'COSMOS_DATABASE_NAME', value: 'newsarchive' }
             { name: 'COSMOS_ARTICLES_CONTAINER', value: 'articles' }
             { name: 'COSMOS_CHUNKS_CONTAINER', value: 'chunks' }
+            { name: 'COSMOS_CATEGORIES_CONTAINER', value: 'categories' }
 
             // Azure AI Search
             { name: 'AZURE_SEARCH_ENDPOINT', value: searchEndpoint }
@@ -93,6 +112,12 @@ resource containerGroup 'Microsoft.ContainerInstance/containerGroups@2023-05-01'
           environmentVariables: [
             { name: 'KEYCLOAK_ADMIN', value: 'admin' }
             { name: 'KEYCLOAK_ADMIN_PASSWORD', secureValue: 'admin' }
+          ]
+          volumeMounts: [
+            {
+              name: 'keycloak-data-volume'
+              mountPath: '/opt/keycloak/data'
+            }
           ]
         }
       }
