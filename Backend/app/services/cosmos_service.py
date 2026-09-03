@@ -295,7 +295,7 @@ def add_category_if_not_exists(category_name: str) -> bool:
 
     try:
         categories_container.read_item(item=category_id, partition_key=category_id)
-        return False  
+        return False
     except CosmosHttpResponseError as e:
         if e.status_code != 404:
             print(f"Errore durante il controllo della categoria su Cosmos DB: {e}")

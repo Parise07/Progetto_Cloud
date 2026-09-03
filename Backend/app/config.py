@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     #Azure Cosmos DB
     COSMOS_ENDPOINT: str
     COSMOS_PRIMARY_KEY: str
-    COSMOS_DATABASE_NAME: str = "newsdb"
+    COSMOS_DATABASE_NAME: str = "newsarchive"
     COSMOS_ARTICLES_CONTAINER: str = "articles"
     COSMOS_CHUNKS_CONTAINER: str = "chunks"
     COSMOS_CATEGORIES_CONTAINER: str = "categories"

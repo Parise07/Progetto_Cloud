@@ -523,7 +523,6 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
               ),
             ),
-            // Bottone "X" per annullare l'inserimento manuale e tornare al Dropdown
             if (_isCustomCategory)
               IconButton(
                 icon: const Icon(Icons.close, color: colorePrincipale),
@@ -542,7 +541,6 @@ class _UploadScreenState extends State<UploadScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Mostra i Tag Selezionati come Chips
         if (_selectedTags.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 12.0),
