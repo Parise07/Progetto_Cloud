@@ -130,7 +130,7 @@ async def get_articles_by_user_id(keyword: str = Query(None, description="Parola
         "articles": articles
     }
 
-@router.get("/categories", summary="Lista di tutte le categorie disponibili")
+@router.get("/articles/categories", summary="Lista di tutte le categorie disponibili")
 async def list_categories():
     '''Restituisce l'elenco completo delle categorie salvate, così il frontend
     non deve mai ricostruirlo interrogando tutti gli articoli.'''
