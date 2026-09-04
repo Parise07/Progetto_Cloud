@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:frontend/pages/login_page.dart';
 import 'package:frontend/pages/upload_page.dart';
-import 'package:frontend/shared_preferences.dart';
 import 'package:frontend/utils.dart';
+import '../api_client.dart';
 import '../api_config.dart';
+import '../auth_service.dart';
 import 'package:frontend/categorypicker.dart';
 
 import 'package:http/http.dart' as http;
@@ -85,22 +86,14 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
       _isLoading = true;
     });
     try {
-      String url = '${ApiConfig.baseUrl}/articles/me';
+      String path = '/articles/me';
       final keyword = _searchController.text.trim();
       if (keyword.isNotEmpty) {
-        url += '?keyword=${Uri.encodeComponent(keyword)}';
+        path += '?keyword=${Uri.encodeComponent(keyword)}';
       }
 
-      // --- 1. RECUPERO IL TOKEN DALLA MEMORIA ---
-      String? token = SharedPreferenceManager.instance.getString('access');
-
-      // --- 2. AGGIUNGO L'HEADER DI AUTENTICAZIONE ---
-      final response = await http.get(
-        Uri.parse(url),
-        headers: {
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
+      // Token, rinnovo anticipato ed eventuale nuovo tentativo: tutto in ApiClient.
+      final response = await ApiClient.get(path);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -137,10 +130,9 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
     await _loadArticles();
   }
   Future<void> _checkLoginStatus() async {
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
     if (mounted) {
       setState(() {
-        _isLogin = accessToken != null;
+        _isLogin = AuthService.isLoggedIn;
       });
     }
   }
@@ -189,7 +181,7 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
 
             if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                await SharedPreferenceManager.clear();
+                await AuthService.logout();
 
                 setState(() {
                   _isLogin=false;
@@ -521,15 +513,8 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
       setState(() => _isLoading = true);
 
       try {
-        String url = '${ApiConfig.baseUrl}/articles/$articleId/delete';
-        String? token = SharedPreferenceManager.instance.getString('access');
-
-        final response = await http.delete(
-          Uri.parse(url),
-          headers: {
-            if (token != null) 'Authorization': 'Bearer $token',
-          },
-        );
+        final response =
+            await ApiClient.delete('/articles/$articleId/delete');
 
         if (response.statusCode == 200) {
           if (mounted) {
@@ -702,8 +687,6 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
                   onPressed: isSaving ? null : () async {
                     setDialogState(() => isSaving = true);
                     try {
-                      String url = '${ApiConfig.baseUrl}/articles/${article.id}/update';
-                      String? token = SharedPreferenceManager.instance.getString('access');
                       Map<String, dynamic> updateData = {
                         "title": titleCtrl.text,
                         "author": authorCtrl.text,
@@ -711,13 +694,9 @@ class _CronologiaScreenState  extends State<CronologiaScreen>{
                         "category": editCategories,
                         "tags": editTags,
                       };
-                      final response = await http.put(
-                        Uri.parse(url),
-                        headers: {
-                          'Content-Type': 'application/json',
-                          if (token != null) 'Authorization': 'Bearer $token',
-                        },
-                        body: jsonEncode(updateData),
+                      final response = await ApiClient.put(
+                        '/articles/${article.id}/update',
+                        body: updateData,
                       );
                       if (response.statusCode == 200) {
                         if (context.mounted) Navigator.pop(context, true);

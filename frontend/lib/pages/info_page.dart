@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frontend/main.dart';
 import 'package:frontend/pages/upload_page.dart';
 
-import '../shared_preferences.dart';
+import '../auth_service.dart';
 import 'cronologia_page.dart';
 import 'login_page.dart';
 
@@ -28,9 +28,8 @@ class _InformazioniScreenState extends State<InformazioniScreen> {
   }
 
   Future<void> _checkLoginStatus() async {
-    String? token = SharedPreferenceManager.instance.getString('access');
     setState(() {
-      _isLogin = token != null;
+      _isLogin = AuthService.isLoggedIn;
     });
   }
 
@@ -104,7 +103,7 @@ class _InformazioniScreenState extends State<InformazioniScreen> {
 
             if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                await SharedPreferenceManager.clear();
+                await AuthService.logout();
 
                 setState(() {
                   _isLogin=false;

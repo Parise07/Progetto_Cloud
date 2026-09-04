@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:frontend/main.dart';
-import '../api_config.dart';
-import '../shared_preferences.dart';
-import 'package:http/http.dart' as http;
+import '../api_client.dart';
+import '../auth_service.dart';
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 
 const Color coloreSfondo = Color(0xFFF4F6F8);
@@ -53,33 +51,28 @@ class _LoginScreenState extends State<LoginScreen> {
         'password': passwordtxt,
       };
 
-      String formData = loginData.entries
-          .map<String>((e) =>
-      '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-          .join('&');
-
       try {
-        final responseLogin = await http.post(
-          Uri.parse('${ApiConfig.baseUrl}/utente/login'), // L'URL della tua nuova rotta!
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(loginData),
+        final responseLogin = await ApiClient.post(
+          '/utente/login',
+          body: loginData,
+          autenticata: false,
         );
 
         if (responseLogin.statusCode == 200) {
-          var responseBody = jsonDecode(responseLogin.body);
-          String accessToken = responseBody['access_token'];
-          String refreshToken = responseBody['refresh_token'];
-
-          SharedPreferences storage = await SharedPreferences.getInstance();
-          await storage.setString('access', accessToken);
-          await storage.setString('refresh', refreshToken);
+          // Salva entrambi i token e le rispettive scadenze: sono queste
+          // ultime a permettere il rinnovo anticipato.
+          await AuthService.salvaSessione(
+              jsonDecode(responseLogin.body) as Map<String, dynamic>);
 
           if (!mounted) return;
           showSuccessDialog("Accesso effettuato con successo bentornato user : $usernametxt");
 
         } else {
           if (!mounted) return; // Protezione anche per il dialog!
-          showErrorDialog('Username o password non corretta: ${responseLogin.body}');
+          final codice = AuthErrorCode.fromResponse(responseLogin);
+          showErrorDialog(codice == AuthErrorCode.authUnavailable
+              ? 'Server di autenticazione non raggiungibile. Riprova fra poco.'
+              : 'Username o password non corretta.');
         }
       } catch (e) {
         print('Eccezione durante il login: $e');
@@ -107,12 +100,11 @@ class _LoginScreenState extends State<LoginScreen> {
       'password': passwordtext,
     };
 
-    String url = '${ApiConfig.baseUrl}/utente/addUtente';
     try {
-      final responseSignin = await http.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(utenteData),
+      final responseSignin = await ApiClient.post(
+        '/utente/addUtente',
+        body: utenteData,
+        autenticata: false,
       );
 
       if (responseSignin.statusCode == 200) {

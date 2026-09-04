@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:frontend/main.dart';
 import 'package:frontend/pages/upload_page.dart';
 import 'dart:html' as html;
+import '../api_client.dart';
 import '../api_config.dart';
+import '../auth_service.dart';
 import 'package:frontend/pages/cronologia_page.dart';
-import '../shared_preferences.dart';
 import "package:pdf/widgets.dart" as pw;
 import 'package:pdf/pdf.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -60,12 +61,10 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   Future<void> _checkLoginStatus() async {
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
-
     // Assicuriamoci che la pagina esista ancora prima di chiamare setState!
     if (mounted) {
       setState(() {
-        _isLogin = accessToken != null;
+        _isLogin = AuthService.isLoggedIn;
       });
     }
   }
@@ -117,15 +116,14 @@ Future<void> _loadArticle() async {
     _chatController.clear();
     _scrollToBottom();
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/search/article-chat'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
+      // La chat e' protetta lato server: ApiClient allega il token e,
+      // se scaduto, lo rinnova e ripete la richiesta.
+      final response = await ApiClient.post(
+        '/search/article-chat',
+        body: {
           'question': query,
           'current_article_id': widget.articleId
-        }),
+        },
       );
 
       if (response.statusCode == 200) {
@@ -422,7 +420,7 @@ Future<void> _loadArticle() async {
 
             if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                await SharedPreferenceManager.clear();
+                await AuthService.logout();
 
                 setState(() {
                   _isLogin=false;
