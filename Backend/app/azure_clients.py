@@ -5,9 +5,7 @@ from openai import AzureOpenAI
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from app.config import settings
-# Utilizziamo il client ASINCRONO di Azure Blob Storage (azure.storage.blob.aio)
-# per garantire la compatibilità con FastAPI (async/await) ed evitare il mix
-# sincrono/asincrono che causa: ValueError: 'coroutine' object is not iterable
+
 from azure.storage.blob.aio import BlobServiceClient as AsyncBlobServiceClient
 
 blob_service_client = AsyncBlobServiceClient.from_connection_string(settings.AZURE_STORAGE_CONNECTION_STRING)

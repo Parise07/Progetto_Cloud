@@ -12,10 +12,15 @@ router = APIRouter(prefix="/search", tags=["Search"])
 
 @router.post("/rag")
 async def search_rag_articles(query: RagSearchQuery, current_user: dict = Depends(get_current_user)):
-    """Ricerca RAG: richiede l'autenticazione.
-
-    L'endpoint consuma embedding e completion di Azure OpenAI, quindi il
-    controllo va fatto prima di generare la risposta e non lato client.
+    """
+        Endpoint asincrono per la ricerca RAG (Retrieval-Augmented Generation) nell'archivio articoli.
+        Richiede l'autenticazione dell'utente, poiché consuma crediti per embedding e completion
+        su Azure OpenAI. Converte la domanda in vettori, recupera i frammenti più pertinenti,
+        genera la risposta AI e restituisce le fonti complete.
+        :param query: Modello Pydantic contenente la domanda dell'utente (question) e opzionalmente i parametri di limite (top_k).
+        :param current_user: Dizionario con i dati dell'utente autenticato, iniettato tramite dipendenza.
+        :return dict: Dizionario con la domanda originale, la risposta generata (answer) e la lista
+                      degli articoli completi usati come fonti (relevant_chunks), senza duplicati.
     """
     if query.question is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -34,9 +39,7 @@ async def search_rag_articles(query: RagSearchQuery, current_user: dict = Depend
         }
     answer= await generate_rag_answer(relevant_chunks = relevant_chunks, question = query.question)
 
-    # I chunk arrivano ordinati per rilevanza e piu' chunk possono appartenere
-    # allo stesso articolo: si eliminano i duplicati conservando l'ordine, cosi'
-    # le fonti restano mostrate dalla piu' pertinente alla meno pertinente.
+
     article_ids = []
     for chunk in relevant_chunks:
         a_id = chunk.get("article_id")
@@ -57,11 +60,14 @@ async def search_rag_articles(query: RagSearchQuery, current_user: dict = Depend
 
 @router.post("/generic")
 async def search_generic_articles(query: GenericSearchQuery):
-    """Ricerca per parole chiave: volutamente pubblica.
-
-    E' la ricerca della home, usata anche dagli utenti non autenticati
-    (`main.dart`, `_performSearch`), e non consuma servizi a consumo.
     """
+        Endpoint per la ricerca testuale generica tramite parole chiave.
+        Rotta volutamente pubblica e non autenticata (utilizzata ad esempio dalla home).
+        Interroga direttamente Cosmos DB senza consumare servizi AI a consumo.
+        :param query: Modello Pydantic contenente le parole chiave da ricercare (keyword).
+        :return dict: Dizionario con le keyword cercate, un messaggio descrittivo e la
+                      lista dei documenti trovati nel database.
+        """
     if not query.keyword or  query.keyword.strip() == "":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     results = search_by_keywords(query.keyword)
@@ -79,10 +85,13 @@ async def search_generic_articles(query: GenericSearchQuery):
 
 @router.post("/article-chat")
 async def chat_articles(query: ArticleChatQuery, current_user: dict = Depends(get_current_user)):
-    """Chat sull'articolo in lettura: richiede l'autenticazione.
-
-    Come per /rag, il vincolo di login mostrato dalla UI viene ora applicato
-    anche lato server, prima di chiamare Azure OpenAI.
+    """
+        Endpoint asincrono per la chat contestuale relativa all'articolo attualmente in lettura.
+        Richiede autenticazione. Recupera prioritariamente i frammenti dell'articolo in esame
+        e, secondariamente, quelli dal resto dell'archivio, fornendo all'LLM un contesto misto.
+        :param query: Modello Pydantic con la domanda e l'ID dell'articolo corrente (current_article_id).
+        :param current_user: Dizionario con i dati dell'utente autenticato, iniettato tramite dipendenza.
+        :return dict: Dizionario contenente esclusivamente la risposta testuale (answer) dell'AI.
     """
     if not query.question:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

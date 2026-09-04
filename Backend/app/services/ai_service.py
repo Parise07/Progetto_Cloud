@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 from app.models.article import MetadataIA
+from app.services.cosmos_service import get_titles_by_ids
 
 
 llm = AzureChatOpenAI(
@@ -47,17 +48,19 @@ ai_metadata_chain = prompt | structured_llm
 
 async def generate_ai_metadata(text_content: str) -> MetadataIA:
     """
-    Funzione che genera i metadati ai
-    :param text_content:
-    :return BaseModel: odello AI
-    """
+        Funzione asincrona che analizza il testo di un articolo tramite Azure OpenAI
+        per estrarre metadati strutturati (riassunto, sottotitolo, keywords, entità, lingua).
+        In modalità TEST_MODE, restituisce un oggetto fittizio per non consumare crediti.
+        :param text_content: Stringa contenente il testo completo dell'articolo da analizzare.
+        :return MetadataIA: Modello Pydantic contenente i metadati estratti strutturati.
+        """
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: Metadati finti (Zero Crediti Consumati)")
         return MetadataIA(
             summary="Riassunto di test generato in locale.",
             subtitle="Sottotitolo locale",
             keywords=["test", "locale", "mock"],
-            suggested_categories=["Tecnologia"],
+            category=["Tecnologia"],
             language="it",
             entities=["persona: Utente Locale"]
         )
@@ -73,6 +76,13 @@ async def generate_ai_metadata(text_content: str) -> MetadataIA:
 
 
 def chunking(text_content: str) -> list[str]:
+    """
+        Funzione che suddivide un testo lungo in frammenti (chunk) più piccoli,
+        ottimizzati per l'indicizzazione vettoriale. Utilizza un RecursiveCharacterTextSplitter
+        con dimensione massima di 500 caratteri e un overlap di 50 caratteri per mantenere il contesto.
+        :param text_content: Stringa contenente il testo intero da suddividere.
+        :return list[str]: Lista di stringhe in cui ogni elemento è un frammento (chunk) del testo originale.
+    """
     text_splitter= RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap= 50,
@@ -81,6 +91,13 @@ def chunking(text_content: str) -> list[str]:
     return chunks
 
 async def generate_embedding_for_chunks(chunks: list[str])-> list[list[float]]:
+    '''
+        Funzione asincrona che converte una lista di frammenti di testo nei rispettivi
+        vettori di embedding numerici sfruttando il modello di Azure OpenAI.
+        In modalità TEST_MODE, restituisce vettori composti da zeri.
+        :param chunks: Lista di stringhe (i frammenti di testo dell'articolo).
+        :return list[list[float]]: Lista di vettori di float, dove ogni vettore rappresenta l'embedding di un chunk.
+        '''
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: Embeddings finti generati.")
         return [[0.0] * 1536 for _ in chunks]
@@ -93,19 +110,46 @@ async def generate_embedding_for_chunks(chunks: list[str])-> list[list[float]]:
             detail=f"Errore durante la generazione degli embeddings (Azure OpenAI): {str(e)}"
         )
 
+def _componi_contesto(relevant_chunks: list[dict]) -> str:
+    '''
+    Compone il contesto per l'LLM identificando ogni frammento con il titolo
+    dell'articolo di provenienza invece che con il suo UUID crittografico.
+    Gli UUID occupano token inutili e degradano l'attenzione del modello.
+    Risolvendoli nei titoli editoriali reali (tramite Cosmos DB), il modello
+    può citare le fonti in modo naturale e discorsivo.
+    :param relevant_chunks: Lista di dizionari che rappresentano i frammenti restituiti da Azure AI Search.
+    :return str: Il contesto testuale formattato e pronto per essere inserito nel prompt dell'LLM.
+    '''
+    titoli = get_titles_by_ids([c.get("article_id") for c in relevant_chunks])
+
+    blocchi = []
+    for chunk in relevant_chunks:
+        testo = chunk.get("chunk_text", "")
+        if not testo:
+            continue
+        art_id = chunk.get("article_id", "")
+        # Se il titolo non è recuperabile si ripiega sull'id, per non perdere
+        # comunque il riferimento alla fonte.
+        fonte = titoli.get(art_id) or art_id or "Sconosciuto"
+        blocchi.append(f'--- Documento: "{fonte}" ---\n{testo}')
+    return "\n\n".join(blocchi)
+
+
 async def generate_rag_answer(relevant_chunks : list[dict], question: str) -> str:
-        '''Prende la domanda dell'utente e i chunk recuperati  e costruisce un prompt
-        per poter chiedere a Azure Openai di generare una risposta '''
+        '''
+    Prende la domanda dell'utente e i frammenti pertinenti recuperati dalla ricerca
+    vettoriale, compone il contesto e costruisce un prompt strutturato per far generare
+    ad Azure OpenAI una risposta chiara, oggettiva e basata unicamente sui documenti forniti.
+
+    :param relevant_chunks: Lista di frammenti testuali estratti come risultato della query vettoriale.
+    :param question: Stringa che rappresenta la domanda posta dall'utente.
+    :return str: La risposta testuale generata dall'LLM.
+    '''
         if settings.TEST_MODE:
             print("🛠️ MOCK MODE: Generazione risposta Rag")
             return "Questa è una risposta generata in automatico e di prova"
 
-        context_text=[]
-        for chunk in relevant_chunks:
-            testo = chunk.get("chunk_text","")
-            art_id = chunk.get("article_id","Sconosciuto")
-            context_text.append(f"--- Documento ID: {art_id} ---\n{testo}")
-        full_text = "\n\n".join(context_text)
+        full_text = _componi_contesto(relevant_chunks)
 
         rag_prompt = ChatPromptTemplate.from_messages(
             [
@@ -146,30 +190,37 @@ async def generate_rag_answer(relevant_chunks : list[dict], question: str) -> st
             )
 
 async def generate_chat_answer(relevant_chunks : list[dict], question: str, current_article_id: str)->str:
-    """Funzione che permette all'agente di avere più liberta rispetto alla risposta rag generale"""
+    """
+        Funzione per una chat contestuale (ad esempio mentre l'utente legge un articolo specifico).
+        Fornisce all'agente maggiore libertà per rispondere prioritariamente usando i dati
+        dell'articolo corrente, esplorando l'archivio globale solo per trovare argomenti
+        simili o correlati in altri documenti, se esplicitamente richiesto.
+
+        :param relevant_chunks: Lista di frammenti testuali pertinenti estratti dall'intero archivio.
+        :param question: Stringa che rappresenta la domanda dell'utente.
+        :param current_article_id: L'ID dell'articolo che l'utente sta attualmente visualizzando.
+        :return str: La risposta conversazionale generata dall'LLM.
+        """
     if settings.TEST_MODE:
-        return "MOKE MODCE : risposta di test generata automaticamente"
-    context_text=[]
-    for chunk in relevant_chunks:
-        testo = chunk.get("chunk_text","")
-        art_id = chunk.get("article_id","Sconosciuto")
-        if testo:
-            context_text.append(f"--- Documento ID: {art_id} ---\n{testo}")
-    full_text = "\n\n".join(context_text)
+        return "MOCK MODE: risposta di test generata automaticamente"
+    full_text = _componi_contesto(relevant_chunks)
+    # Anche l'articolo attualmente in lettura viene indicato per titolo.
+    titolo_corrente = get_titles_by_ids([current_article_id]).get(
+        current_article_id, current_article_id)
     prompt = ChatPromptTemplate.from_messages([
     (
         "system",
-        "Sei un assistente editoriale intelligente. L'utente sta attualmente leggendo l'articolo con ID: '{current_article_id}'.\n\n"
+        "Sei un assistente editoriale intelligente. L'utente sta attualmente leggendo l'articolo intitolato: \"{titolo_corrente}\".\n\n"
         "Ho cercato nell'intero archivio e ho trovato questi frammenti correlati:\n\n"
         "CONTESTO GLOBALE:\n{context}\n\n"
         "REGOLE DI RISPOSTA:\n"
         "1. Rispondi basandoti ESCLUSIVAMENTE sulle informazioni presenti nel CONTESTO GLOBALE. Non inventare fatti, nomi, numeri o eventi non presenti nei frammenti.\n"
-        "2. Se l'utente chiede spiegazioni sull'articolo in lettura (ID '{current_article_id}'), usa prioritariamente i frammenti con quello stesso Documento ID.\n"
-        "3. Se l'utente chiede di articoli simili o cosa altro c'è in archivio sul tema, guarda i frammenti con Documento ID DIVERSO da '{current_article_id}'. "
+        "2. Se l'utente chiede spiegazioni sull'articolo in lettura, usa prioritariamente i frammenti del documento \"{titolo_corrente}\".\n"
+        "3. Se l'utente chiede di articoli simili o cosa altro c'è in archivio sul tema, guarda i frammenti di documenti DIVERSI da \"{titolo_corrente}\". "
         "Se e SOLO SE ne trovi di realmente pertinenti alla domanda, rispondi con entusiasmo indicando il Titolo del documento e un breve riassunto fedele al contenuto.\n"
         "4. Se nel CONTESTO GLOBALE non ci sono informazioni pertinenti alla domanda (né nell'articolo corrente né altrove), dillo chiaramente: "
         "'Mi dispiace, non ho trovato informazioni pertinenti nell'archivio.' Non forzare una risposta positiva se il contesto non la supporta davvero.\n"
-        "5. Cita sempre il Documento Title quando riporti un'informazione specifica.\n"
+        "5. Cita sempre il titolo del documento quando riporti un'informazione specifica.\n"
         "6. Rispondi nella stessa lingua della domanda dell'utente."
     ),
     (
@@ -182,7 +233,7 @@ async def generate_chat_answer(relevant_chunks : list[dict], question: str, curr
         response = await rag_chain.ainvoke({
             "context": full_text,
             "question": question,
-            "current_article_id": current_article_id
+            "titolo_corrente": titolo_corrente
         })
         return response.content
     except Exception as e:
