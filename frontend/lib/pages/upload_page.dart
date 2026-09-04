@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:frontend/pages/cronologia_page.dart';
 import 'package:http/http.dart' as http;
 import 'package:desktop_drop/desktop_drop.dart';
+import '../api_client.dart';
 import '../api_config.dart';
+import '../auth_service.dart';
 import '../main.dart';
-import '../shared_preferences.dart';
 import 'package:frontend/categorypicker.dart';
 import 'info_page.dart';
 import 'login_page.dart';
@@ -84,10 +85,9 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _checkLoginStatus() async {
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
     if (mounted) {
       setState(() {
-        _isLogin = accessToken != null;
+        _isLogin = AuthService.isLoggedIn;
       });
     }
   }
@@ -136,7 +136,7 @@ class _UploadScreenState extends State<UploadScreen> {
 
             if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                await SharedPreferenceManager.clear();
+                await AuthService.logout();
 
                 setState(() {
                   _isLogin=false;
@@ -598,44 +598,42 @@ class _UploadScreenState extends State<UploadScreen> {
             );
 
             try {
-              var uri = Uri.parse('${ApiConfig.baseUrl}/articles/upload');
-              var request = http.MultipartRequest('POST', uri);
+              // La richiesta viene costruita da una funzione: se il token
+              // va rinnovato, ApiClient la ricostruisce per il secondo
+              // tentativo (una MultipartRequest gia' inviata non e' riusabile).
+              final response = await ApiClient.multipart(() {
+                var request = http.MultipartRequest(
+                    'POST', Uri.parse('${ApiConfig.baseUrl}/articles/upload'));
 
-              String? token = SharedPreferenceManager.instance.getString('access');
-              if (token != null) {
-                request.headers['Authorization'] = 'Bearer $token';
-              }
+                request.fields['title'] = _titleController.text;
+                request.fields['author'] = _authorController.text;
+                request.fields['description'] = _descriptionController.text;
 
-              request.fields['title'] = _titleController.text;
-              request.fields['author'] = _authorController.text;
-              request.fields['description'] = _descriptionController.text;
+                for (String cat in _selectedCategories) {
+                  request.files.add(http.MultipartFile.fromString('category', cat));
+                }
 
-              for (String cat in _selectedCategories) {
-                request.files.add(http.MultipartFile.fromString('category', cat));
-              }
+                for (String tag in _selectedTags) {
+                  request.files.add(http.MultipartFile.fromString('tags', tag));
+                }
 
-              for (String tag in _selectedTags) {
-                request.files.add(http.MultipartFile.fromString('tags', tag));
-              }
+                if (_documentFile != null && _documentFile!.bytes != null) {
+                  request.files.add(http.MultipartFile.fromBytes(
+                    'file',
+                    _documentFile!.bytes!,
+                    filename: _documentFile!.name,
+                  ));
+                }
 
-              if (_documentFile != null && _documentFile!.bytes != null) {
-                request.files.add(http.MultipartFile.fromBytes(
-                  'file',
-                  _documentFile!.bytes!,
-                  filename: _documentFile!.name,
-                ));
-              }
-
-              if (_coverFile != null && _coverFile!.bytes != null) {
-                request.files.add(http.MultipartFile.fromBytes(
-                  'cover_image',
-                  _coverFile!.bytes!,
-                  filename: _coverFile!.name,
-                ));
-              }
-
-              var streamedResponse = await request.send();
-              var response = await http.Response.fromStream(streamedResponse);
+                if (_coverFile != null && _coverFile!.bytes != null) {
+                  request.files.add(http.MultipartFile.fromBytes(
+                    'cover_image',
+                    _coverFile!.bytes!,
+                    filename: _coverFile!.name,
+                  ));
+                }
+                return request;
+              });
 
               if (response.statusCode == 201) {
                 ScaffoldMessenger.of(context).showSnackBar(

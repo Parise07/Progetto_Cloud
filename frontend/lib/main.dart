@@ -6,7 +6,9 @@ import 'package:frontend/pages/upload_page.dart';
 import 'package:frontend/shared_preferences.dart';
 import 'package:frontend/utils.dart';
 
+import 'api_client.dart';
 import 'api_config.dart';
+import 'auth_service.dart';
 import 'pages/detail_page.dart';
 import 'pages/info_page.dart';
 import 'pages/login_page.dart';
@@ -23,6 +25,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   //inizializzo il database locale prima di tutto
   await SharedPreferenceManager.init();
+  //allineo lo stato della sessione ai token eventualmente gia' salvati
+  AuthService.init();
   runApp(const MyApp());
 }
 
@@ -133,9 +137,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _checkLoginStatus() async{
-    String? accessToken = SharedPreferenceManager.instance.getString('access');
     setState(() {
-      _isLogin= accessToken != null;
+      // Conta la validita' del refresh token, non la presenza dell'access:
+      // un access scaduto viene rinnovato senza disturbare l'utente.
+      _isLogin = AuthService.isLoggedIn;
     });
   }
 
@@ -148,11 +153,12 @@ class _MyHomePageState extends State<MyHomePage> {
       _isLoading = true;
     });
     try {
-      String url = '${ApiConfig.baseUrl}/articles?skip=$_skip&limit=$_limit';
+      String path = '/articles?skip=$_skip&limit=$_limit';
       if (_selectedCategory != 'Tutte') {
-        url += '&category=$_selectedCategory';
+        path += '&category=$_selectedCategory';
       }
-      final response = await http.get(Uri.parse(url));
+      // Elenco pubblico: nessun token da allegare.
+      final response = await ApiClient.get(path, autenticata: false);
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> items = data['articles'] ?? [];
@@ -193,41 +199,42 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _performSearch(String query) async {
     if (query.trim().isEmpty) return;
+
+    // La ricerca RAG e' protetta lato server: senza account la richiesta
+    // verrebbe rifiutata con 401, quindi fermiamoci prima di inviarla.
+    if (_isRagMode && !_isLogin) {
+      showErrorDialog(
+          "Per poter utilizzare la ricerca RAG hai bisogno di un account. Accedi o registrati .");
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _articles.clear();
     });
-    String url = _isRagMode
-        ? '${ApiConfig.baseUrl}/search/rag'
-        : '${ApiConfig.baseUrl}/search/generic';
+    String path = _isRagMode ? '/search/rag' : '/search/generic';
 
     try{
       final Map<String, dynamic> requestBody = _isRagMode
           ? {'question': query.trim()}
           :  {'keyword': query.trim()};
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(requestBody),
+      // La ricerca generica e' pubblica, quella RAG richiede l'autenticazione:
+      // il token e l'eventuale rinnovo li gestisce ApiClient.
+      final response = await ApiClient.post(
+        path,
+        body: requestBody,
+        autenticata: _isRagMode,
       );
       if (response.statusCode == 200){
         final Map<String, dynamic> responseData = jsonDecode(response.body);
         setState(() {
           if(_isRagMode){
-            if(!_isLogin) {
-              showErrorDialog(
-                  "Per poter utilizzare la ricerca RAG hai bisogno di un account. Accedi o registrati .");
-              return ;
-            }else {
-              _ragAnswer = responseData['answer'] ?? "Nessuna risposta.";
-              final List<
-                  dynamic> relevant_chunk = responseData['relevant_chunks'] ??
-                  [];
-              _articles.addAll(relevant_chunk.map((item) =>
-                  Articolo.fromJson(item as Map<String, dynamic>)).toList());
-              _hasMore = false;
-              _isLoading = false;
-            }
+            _ragAnswer = responseData['answer'] ?? "Nessuna risposta.";
+            final List<dynamic> relevant_chunk = responseData['relevant_chunks'] ?? [];
+            _articles.addAll(relevant_chunk.map((item) =>
+                Articolo.fromJson(item as Map<String, dynamic>)).toList());
+            _hasMore = false;
+            _isLoading = false;
           }else{
             _ragAnswer=null;
             final List<dynamic> results= responseData ['results'] ?? [];
@@ -450,7 +457,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
             if (_isLogin)
               _buildDrawerItem(Icons.logout, 'Log-out', 'Esci dall\'account', () async {
-                await SharedPreferenceManager.clear();
+                // Revoca il refresh token su Keycloak, poi pulisce la sessione.
+                await AuthService.logout();
 
                 setState(() {
                   _isLogin=false;

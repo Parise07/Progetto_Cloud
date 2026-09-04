@@ -32,6 +32,21 @@ class Settings(BaseSettings):
     KEYCLOAK_SERVER_URL: str
     KEYCLOAK_REALM: str
     KEYCLOAK_CLIENT_ID: str
+    # Valorizzare solo se il client viene reso "confidential" su Keycloak.
+    KEYCLOAK_CLIENT_SECRET: str | None = None
+    # Credenziali dell'account di servizio usato per la registrazione utenti.
+    KEYCLOAK_ADMIN_USERNAME: str = "admin"
+    KEYCLOAK_ADMIN_PASSWORD: str = "admin"
+    KEYCLOAK_ADMIN_REALM: str = "master"
+    # Secondi di validita' della cache locale delle chiavi pubbliche (JWKS).
+    KEYCLOAK_JWKS_CACHE_TTL: int = 3600
+    # Se True, rifiuta i token emessi per un client diverso da KEYCLOAK_CLIENT_ID.
+    KEYCLOAK_VERIFY_AZP: bool = False
+
+    #Ricerca RAG
+    # Numero di chunk recuperati da AI Search per rispondere. Piu' alto = piu'
+    # articoli distinti fra le fonti, ma prompt piu' lungo verso Azure OpenAI.
+    RAG_TOP_K: int = 10
 
     TEST_MODE: bool = False
 
