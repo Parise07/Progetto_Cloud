@@ -50,7 +50,7 @@ def save_article_metadata(manual_data: dict) -> dict:
 def check_title_exists(title: str) -> bool:
     """Funzione di check (primo blocco) sulla similarità dei titoli
     evitando che due articoli abbiano stesso titolo
-    :param title:
+    :param title: titolo file inserito dall'utente
     :return boolean:
     """
 

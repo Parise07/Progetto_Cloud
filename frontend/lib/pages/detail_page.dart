@@ -901,7 +901,7 @@ Future<void> _loadArticle() async {
     for (String entity in entities) {
       List<String> parts = entity.split(':');
       if (parts.length >= 2) {
-        String name = parts[0].trim();
+        String name  = parts[0].trim();
         String macro = parts.sublist(1).join(':').trim();
 
         if (!grouped.containsKey(macro)) {

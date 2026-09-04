@@ -114,6 +114,13 @@ async def index_chunk_to_ai_search(article_id: str, chunks: list[str], embedding
         )
 
 async def check_similarity(vector: list[float], threshold: float = 0.90) -> bool :
+    '''
+    Funzione che restitutisce uno score di similarità di un articolo con gli altri presenti nell'archivio e restituisce
+    false nel momento il cui un file ha un threshold superiore al 90 percento di default
+    :param vector:
+    :param threshold:
+    :return:
+    '''
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: Controllo similarità vettoriale saltato.")
         return False
@@ -142,9 +149,7 @@ async def check_similarity(vector: list[float], threshold: float = 0.90) -> bool
 
                 if score >= threshold:
                     return True
-
             return False
-
     except Exception as e:
         print(f"Errore durante il controllo di similarità: {e}")
         return False
