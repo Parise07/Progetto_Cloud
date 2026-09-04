@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException,status
 from app.services.cosmos_service import search_by_keywords, get_article_by_id
 from app.models.chunk import RagSearchQuery, GenericSearchQuery, ArticleChatQuery
 from app.services.ai_service import generate_embedding_for_chunks, generate_rag_answer, generate_chat_answer
-from app.services.search_service import search_relevant_chunks
+from app.services.search_service import search_relevant_chunks, search_relevant_chunks_chat
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
@@ -63,22 +63,18 @@ async def chat_articles(query: ArticleChatQuery):
 
     query_embedding = await generate_embedding_for_chunks([query.question])
     question = query_embedding[0]
-    relevant_chunks = await search_relevant_chunks(question)
+    own_chunks  = await search_relevant_chunks_chat(question,top_k=4,article_id= query.current_article_id)
+
+    global_chunks = await search_relevant_chunks(question, top_k=3)
+    other_chunks = [c for c in global_chunks if c.get("article_id") != query.current_article_id]
+
+    relevant_chunks = own_chunks + other_chunks
+
     if not relevant_chunks:
         return {
             "answer": "Non ho trovato altri riferimenti nel database per aiutarti con questa domanda."
         }
-    for chunk in relevant_chunks:
-        a_id = chunk.get("article_id")
-        if a_id:
-            doc = get_article_by_id(a_id)
-            if doc and "manual" in doc and "title" in doc["manual"]:
-                chunk["title"] = doc["manual"]["title"]
-            else:
-                chunk["title"] = "Titolo Sconosciuto"
-    current_doc = get_article_by_id(query.current_article_id)
-    current_title = current_doc["manual"]["title"] if current_doc and "manual" in current_doc else "Articolo Corrente"
-    answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_title = current_title)
+    answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_id = query.current_article_id)
     return {
         "answer": answer
     }

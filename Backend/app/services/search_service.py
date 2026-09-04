@@ -216,3 +216,42 @@ async def delete_article_chunk(article_id: str, chunk_count: int):
             await local_search_client.delete_documents(documents=documents_to_delete)
     except Exception as e:
         print(f"Errore eliminazione vettori AI Search: {e}")
+
+async def search_relevant_chunks_chat(question: list[float], top_k: int = 3, article_id: str | None = None) -> list[dict]:
+    ''' Dato un vettore Question trova e restituisce i top_k chunk più simili,
+    opzionalmente filtrati su un article_id specifico '''
+    if settings.TEST_MODE:
+        print("🛠️ MOCK MODE: ricerca finta eseguita ")
+        return [
+            {"article_id": "test-1234", "chunk_text": "questo è un testo di prova", "score": 0.99}
+        ]
+    vector_query = VectorizedQuery(
+        vector=question,
+        k_nearest_neighbors=top_k,
+        fields="embedding"
+    )
+    result_list = []
+    local_search_client = SearchClient(
+        endpoint=settings.AZURE_SEARCH_ENDPOINT,
+        index_name=settings.AZURE_SEARCH_INDEX_NAME,
+        credential=AzureKeyCredential(settings.AZURE_SEARCH_ADMIN_KEY)
+    )
+    filter_expr = f"article_id eq '{article_id}'" if article_id else None
+    try:
+        async with local_search_client:
+            results = await local_search_client.search(
+                search_text=None,
+                vector_queries=[vector_query],
+                filter=filter_expr,
+                top=top_k
+            )
+            async for result in results:
+                result_list.append({
+                    "article_id": result.get("article_id"),
+                    "chunk_text": result.get("chunk_text"),
+                    "score": result.get("@search.score", 0)
+                })
+        return result_list
+    except Exception as e:
+        print(f"Errore durante la ricerca in AI Search: {e}")
+        return []
