@@ -78,7 +78,7 @@ async def chat_articles(query: ArticleChatQuery):
                 chunk["title"] = "Titolo Sconosciuto"
     current_doc = get_article_by_id(query.current_article_id)
     current_title = current_doc["manual"]["title"] if current_doc and "manual" in current_doc else "Articolo Corrente"
-    answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_id = query.current_article_id)
+    answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_title = current_title)
     return {
         "answer": answer
     }
