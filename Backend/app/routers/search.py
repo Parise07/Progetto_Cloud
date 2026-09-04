@@ -68,6 +68,16 @@ async def chat_articles(query: ArticleChatQuery):
         return {
             "answer": "Non ho trovato altri riferimenti nel database per aiutarti con questa domanda."
         }
+    for chunk in relevant_chunks:
+        a_id = chunk.get("article_id")
+        if a_id:
+            doc = get_article_by_id(a_id)
+            if doc and "manual" in doc and "title" in doc["manual"]:
+                chunk["title"] = doc["manual"]["title"]
+            else:
+                chunk["title"] = "Titolo Sconosciuto"
+    current_doc = get_article_by_id(query.current_article_id)
+    current_title = current_doc["manual"]["title"] if current_doc and "manual" in current_doc else "Articolo Corrente"
     answer= await generate_chat_answer(relevant_chunks = relevant_chunks, question = query.question, current_article_id = query.current_article_id)
     return {
         "answer": answer

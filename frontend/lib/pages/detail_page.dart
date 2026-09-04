@@ -343,7 +343,6 @@ Future<void> _loadArticle() async {
   }
   @override
   Widget build(BuildContext context) {
-    // Breakpoint per impilare Immagine e Metadati Manuali su schermi piccoli
     bool isWideScreen = MediaQuery.of(context).size.width > 900;
     if (_isLoading) {
       return const Scaffold(
@@ -383,7 +382,6 @@ Future<void> _loadArticle() async {
         elevation: 0,
       ),
 
-      // Menù a tendina Laterale
       endDrawer: Drawer(
         backgroundColor: coloreSfondo,
         child: ListView(
@@ -448,7 +446,7 @@ Future<void> _loadArticle() async {
               if (_isLogin) {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                  MaterialPageRoute(builder: (context) => const MyApp()),
                 );
               } else{
                 _mostraDialogLoginRichiesto("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
@@ -484,31 +482,27 @@ Future<void> _loadArticle() async {
         icon: const Icon(Icons.chat_bubble_outline, size: 24),
         label: const Text('Chiedi all\'IA', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       )
-          : null, // Scompare completamente quando apri la chat
+          : null,
 
       body: Stack(
         children: [
-          // contenuto della pagina
           SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 48.0, vertical: 32.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // TITOLO
                 Text(
                   _article!.title,
                   style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: colorePrincipale, height: 1.2),
                 ),
                 const SizedBox(height: 32),
 
-                // IMMAGINE
                 if (isWideScreen)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(flex: 5, child: _buildCoverImage()),
                       const SizedBox(width: 40),
-                      // metadati manuali
                       Expanded(flex: 5, child: _buildManualMetadata()),
                     ],
                   )
@@ -524,7 +518,6 @@ Future<void> _loadArticle() async {
 
                 const SizedBox(height: 48),
 
-                // matadati IA
                 _buildAIMetadata(),
                 const SizedBox(height: 48),
 
@@ -532,19 +525,18 @@ Future<void> _loadArticle() async {
                 const SizedBox(height: 48),
 
                 Wrap(
-                  spacing: 24, // Spazio orizzontale
-                  runSpacing: 16, // Spazio verticale se lo schermo è troppo stretto
+                  spacing: 24,
+                  runSpacing: 16,
                   children: [
                     _buildActionBtn(Icons.download, "Scarica Documento", () => _scaricaDocumento(), isPrimary: true),
                     _buildActionBtn(Icons.data_object, "Scarica Metadati (JSON)", () => _scaricaFileJson(), isPrimary: false),
                   ],
                 ),
-                const SizedBox(height: 80), // Spazio finale
+                const SizedBox(height: 80),
               ],
             ),
           ),
 
-          //opacizzazione sfondo quando la chat è aperta
           if (_isChatOpen)
             GestureDetector(
               onTap: () => setState(() => _isChatOpen = false),
@@ -555,7 +547,6 @@ Future<void> _loadArticle() async {
               ),
             ),
 
-          //pannello laterale chat
           AnimatedPositioned(
             duration: const Duration(milliseconds: 400),
             curve: Curves.easeInOutBack,
@@ -910,8 +901,8 @@ Future<void> _loadArticle() async {
     for (String entity in entities) {
       List<String> parts = entity.split(':');
       if (parts.length >= 2) {
-        String macro = parts[0].trim();
-        String name = parts.sublist(1).join(':').trim();
+        String name = parts[0].trim();
+        String macro = parts.sublist(1).join(':').trim();
 
         if (!grouped.containsKey(macro)) {
           grouped[macro] = [];

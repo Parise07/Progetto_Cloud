@@ -166,7 +166,7 @@ class _UploadScreenState extends State<UploadScreen> {
               if (_isLogin) {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const CronologiaScreen()),
+                  MaterialPageRoute(builder: (context) => const MyApp()),
                 );
               } else{
                 showErrorDialog("É necessario il login per poter visualizzare la cronologia. Accedi o registrati. ");
