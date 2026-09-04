@@ -518,70 +518,80 @@ class _MyHomePageState extends State<MyHomePage> {
         onRefresh: _refreshArticles,
         child: _articles.isEmpty && _isLoading
             ? const Center(child: CircularProgressIndicator(color: coloreAccento))
-            : Column(
-          children: [
+        // Un unico CustomScrollView: risposta RAG, intestazione e griglia sono
+        // slivers dello stesso scroll, quindi scorrono insieme invece di avere
+        // la risposta fissa in testa con le card che le passano sotto.
+            : CustomScrollView(
+          controller: _scrollController,
+          // Consente il pull-to-refresh anche quando il contenuto non riempie
+          // lo schermo.
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
 
             if (_ragAnswer != null)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: coloreAccento.withAlpha(50), width: 2),
-                  boxShadow: [
-                    BoxShadow(color: coloreAccento.withAlpha(20), blurRadius: 15, offset: const Offset(0, 5))
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.psychology, color: coloreAccento, size: 28),
-                        SizedBox(width: 10),
-                        Text("Risposta dell'Assistente", style: TextStyle(fontWeight: FontWeight.bold, color: coloreAccento, fontSize: 18)),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      _ragAnswer!,
-                      style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
-                    ),
-                  ],
+              SliverToBoxAdapter(
+                child: Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: coloreAccento.withAlpha(50), width: 2),
+                    boxShadow: [
+                      BoxShadow(color: coloreAccento.withAlpha(20), blurRadius: 15, offset: const Offset(0, 5))
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.psychology, color: coloreAccento, size: 28),
+                          SizedBox(width: 10),
+                          Text("Risposta dell'Assistente", style: TextStyle(fontWeight: FontWeight.bold, color: coloreAccento, fontSize: 18)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _ragAnswer!,
+                        style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             if (_ragAnswer != null && _articles.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(28, 16, 24, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "Articoli Consultati",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorePrincipale),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(28, 16, 24, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Articoli Consultati",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colorePrincipale),
+                    ),
                   ),
                 ),
               ),
 
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                child: GridView.builder(
-                  controller: _scrollController,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 5,
-                    childAspectRatio: 0.65,
-                    crossAxisSpacing: 20,
-                    mainAxisSpacing: 20,
-                  ),
-                  itemCount: _articles.length + (_hasMore ? 1 : 0),
-                  itemBuilder: (context, index) {
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 5,
+                  childAspectRatio: 0.65,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 20,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
                     if (index == _articles.length) {
                       return const Center(child: CircularProgressIndicator(color: coloreAccento));
                     }
                     return _buildArticleCard(_articles[index]);
                   },
+                  childCount: _articles.length + (_hasMore ? 1 : 0),
                 ),
               ),
             ),

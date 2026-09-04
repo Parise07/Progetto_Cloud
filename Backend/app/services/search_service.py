@@ -82,7 +82,17 @@ async def setup_ai_search_index():
 
 
 async def index_chunk_to_ai_search(article_id: str, chunks: list[str], embedding: list[list[float]]):
-        
+    """
+        Funzione asincrona che indicizza i chunk di testo di un articolo e i loro relativi embedding
+        su Azure AI Search. Se la modalità di test (TEST_MODE) è attiva, simula l'operazione senza
+        consumare crediti né effettuare chiamate reali.
+
+        :param article_id: L'identificativo univoco dell'articolo a cui appartengono i chunk.
+        :param chunks: Una lista di stringhe di testo (chunk) suddivise dall'articolo originale.
+        :param embedding: Una lista di vettori (embedding numerici) generati, ciascuno corrispondente
+                          a un chunk di testo specifico.
+        :return: None. (Solleva un'eccezione HTTPException in caso di fallimento durante l'upload dei documenti).
+        """
     if settings.TEST_MODE:
         print(f" MOCK MODE: Indicizzazione simulata per article_id={article_id} ({len(chunks)} chunks). Zero crediti consumati.")
         return
@@ -103,7 +113,6 @@ async def index_chunk_to_ai_search(article_id: str, chunks: list[str], embedding
         )
         documents_to_upload.append(doc_model.model_dump())
 
-    
     try:
         async with search_client:
             await search_client.upload_documents(documents=documents_to_upload)
@@ -114,13 +123,16 @@ async def index_chunk_to_ai_search(article_id: str, chunks: list[str], embedding
         )
 
 async def check_similarity(vector: list[float], threshold: float = 0.90) -> bool :
-    '''
-    Funzione che restitutisce uno score di similarità di un articolo con gli altri presenti nell'archivio e restituisce
-    false nel momento il cui un file ha un threshold superiore al 90 percento di default
-    :param vector:
-    :param threshold:
-    :return:
-    '''
+    """
+    Funzione asincrona che verifica la presenza di articoli simili nell'archivio tramite ricerca vettoriale.
+    Restituisce True se viene trovato almeno un documento con un punteggio di similarità (score) uguale
+    o superiore alla soglia impostata, altrimenti restituisce False. In modalità di test (TEST_MODE),
+    il controllo viene saltato.
+    :param vector: Lista di float che rappresenta l'embedding dell'articolo da analizzare.
+    :param threshold: Valore float che indica la soglia minima di similarità per considerare
+                      un articolo come duplicato o troppo simile (default: 0.90).
+    :return: True se la similarità del file trovato è >= threshold, False altrimenti.
+    """
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: Controllo similarità vettoriale saltato.")
         return False
@@ -156,7 +168,17 @@ async def check_similarity(vector: list[float], threshold: float = 0.90) -> bool
 
 
 async def search_relevant_chunks(question: list[float], top_k: int = 3) ->list[dict]:
-    ''' Dato un vettore Question trova e restituisce i top_k chunk più simili  '''
+    """
+    Funzione asincrona che, dato il vettore di embedding di una query, esegue una ricerca
+    vettoriale su Azure AI Search per recuperare i chunk di testo più semanticamente simili.
+    In modalità di test (TEST_MODE), restituisce un risultato simulato predefinito.
+    :param question: Lista di float che rappresenta la query vettoriale (l'embedding della domanda).
+    :param top_k: Numero intero che definisce il numero massimo di risultati rilevanti da estrarre (default: 3).
+    :return: Una lista di dizionari, dove ogni dizionario contiene 'article_id' (ID del documento originale),
+             'chunk_text' (il frammento di testo) e 'score' (punteggio di similarità vettoriale).
+             In caso di errore nell'interrogazione, restituisce una lista vuota.
+    """
+
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: ricerca finta eseguita ")
         return [
@@ -201,8 +223,17 @@ async def search_relevant_chunks(question: list[float], top_k: int = 3) ->list[d
 
 
 async def delete_article_chunk(article_id: str, chunk_count: int):
-    """dato un article id e il numero di chunk elimina tutti i vettori chunk
-     dell'articolo """
+    '''
+    Funzione asincrona che elimina da Azure AI Search tutti i documenti (chunk vettoriali)
+    associati a un determinato articolo. Gli ID dei chunk vengono ricostruiti dinamicamente
+    a partire dall'ID dell'articolo e dal numero totale di frammenti. In modalità di test
+    (TEST_MODE), simula l'eliminazione senza effettuare chiamate reali.
+
+    :param article_id: L'identificativo univoco dell'articolo di cui eliminare i chunk.
+    :param chunk_count: Il numero totale di chunk associati all'articolo (utilizzato per generare
+                        la lista degli ID da rimuovere).
+    :return: None.
+    '''
     if settings.TEST_MODE:
         print(f"🛠️ MOCK MODE: Vettori dell'articolo {article_id} eliminati.")
         return
@@ -223,8 +254,20 @@ async def delete_article_chunk(article_id: str, chunk_count: int):
         print(f"Errore eliminazione vettori AI Search: {e}")
 
 async def search_relevant_chunks_chat(question: list[float], top_k: int = 3, article_id: str | None = None) -> list[dict]:
-    ''' Dato un vettore Question trova e restituisce i top_k chunk più simili,
-    opzionalmente filtrati su un article_id specifico '''
+    """
+    Funzione asincrona che, dato il vettore di embedding di una domanda, esegue una ricerca
+    vettoriale per trovare i frammenti di testo più pertinenti. Supporta un filtro opzionale
+    per restringere la ricerca a un singolo articolo specifico. In modalità di test (TEST_MODE),
+    restituisce una risposta simulata predefinita.
+    :param question: Lista di float che rappresenta la query vettoriale (embedding della domanda).
+    :param top_k: Numero intero che definisce la quantità massima di risultati da estrarre (default: 3).
+    :param article_id: Stringa opzionale che rappresenta l'ID dell'articolo. Se fornito, filtra
+                       i risultati limitando la ricerca a quel solo documento; se None, cerca
+                       nell'intero archivio.
+    :return: Una lista di dizionari, dove ciascuno contiene 'article_id' (documento di origine),
+             'chunk_text' (il frammento di testo) e 'score' (punteggio di similarità).
+             In caso di errore, restituisce una lista vuota.
+    """
     if settings.TEST_MODE:
         print("🛠️ MOCK MODE: ricerca finta eseguita ")
         return [

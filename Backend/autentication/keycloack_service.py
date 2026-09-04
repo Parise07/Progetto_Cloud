@@ -1,16 +1,4 @@
-"""
-Servizio di autenticazione basato su Keycloak (OIDC / OAuth 2.0).
 
-Il modulo copre tre responsabilità:
-  - verifica dei token in ingresso (`get_current_user`), con cache locale del JWKS;
-  - ciclo di vita della sessione (login, refresh, logout);
-  - registrazione degli utenti tramite Admin API.
-
-Gli errori di autenticazione restituiscono sempre un codice applicativo
-(`AuthErrorCode`) nel corpo della risposta, così che il client possa distinguere
-"token scaduto, rinnovalo in silenzio" da "sessione persa, rifai il login" e
-automatizzare il refresh senza mostrare errori all'utente.
-"""
 import asyncio
 import time
 
@@ -55,12 +43,7 @@ def _auth_error(code: str, message: str, status_code: int = status.HTTP_401_UNAU
     )
 
 
-# --------------------------------------------------------------------------- #
-# Client Keycloak
-# --------------------------------------------------------------------------- #
 
-# Il costruttore di KeycloakOpenID non effettua chiamate di rete: può restare
-# a livello di modulo.
 keycloak_openid = KeycloakOpenID(
     server_url=settings.KEYCLOAK_SERVER_URL,
     client_id=settings.KEYCLOAK_CLIENT_ID,
@@ -68,9 +51,7 @@ keycloak_openid = KeycloakOpenID(
     client_secret_key=settings.KEYCLOAK_CLIENT_SECRET,
 )
 
-# KeycloakAdmin invece si autentica già nel costruttore: viene creato al primo
-# utilizzo, altrimenti l'API non parte se Keycloak non è ancora pronto (caso
-# tipico su Azure Container Instances, dove i due container avviano insieme).
+
 _keycloak_admin: KeycloakAdmin | None = None
 
 
@@ -98,9 +79,6 @@ def get_keycloak_admin() -> KeycloakAdmin:
     return _keycloak_admin
 
 
-# --------------------------------------------------------------------------- #
-# Cache del JWKS (chiavi pubbliche del realm)
-# --------------------------------------------------------------------------- #
 
 _jwks_cache: dict | None = None
 _jwks_fetched_at: float = 0.0
@@ -145,11 +123,8 @@ async def get_keycloak_public_keys(force_refresh: bool = False) -> dict:
     )
     if is_fresh and not force_refresh:
         return _jwks_cache
-
-    # Il lock evita che N richieste concorrenti scarichino N volte lo stesso JWKS.
     async with _jwks_lock:
-        # Un'altra coroutine potrebbe aver già aggiornato la cache mentre
-        # attendevamo il lock: ricontrolliamo prima di uscire in rete.
+
         already_updated = (
             _jwks_cache is not None
             and (time.monotonic() - _jwks_fetched_at) < settings.KEYCLOAK_JWKS_CACHE_TTL
@@ -167,10 +142,6 @@ def _jwks_contains_kid(jwks: dict, kid: str) -> bool:
     return any(key.get("kid") == kid for key in jwks.get("keys", []))
 
 
-# --------------------------------------------------------------------------- #
-# Verifica del token in ingresso
-# --------------------------------------------------------------------------- #
-
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
     """Verifica firma e validità dell'access token e ne restituisce i claim.
 
@@ -187,16 +158,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
 
     jwks = await get_keycloak_public_keys()
     if kid and not _jwks_contains_kid(jwks, kid):
-        # Chiave sconosciuta: probabile rotazione delle chiavi del realm.
         jwks = await get_keycloak_public_keys(force_refresh=True)
 
     try:
         payload = jwt.decode(
             token,
             jwks,
-            algorithms=["RS256"],  # L'algoritmo usato da Keycloak
+            algorithms=["RS256"],
             issuer=f"{settings.KEYCLOAK_SERVER_URL}/realms/{settings.KEYCLOAK_REALM}",
-            options={"verify_aud": False},  # Keycloak popola `azp`, non `aud`, per i client pubblici
+            options={"verify_aud": False},
         )
     except ExpiredSignatureError:
         raise _auth_error(AuthErrorCode.TOKEN_EXPIRED, "Access token scaduto.")
@@ -210,9 +180,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Security(
     return payload
 
 
-# --------------------------------------------------------------------------- #
-# Ciclo di vita della sessione
-# --------------------------------------------------------------------------- #
+
 
 def _normalize_token_response(raw: dict) -> dict:
     """Normalizza la risposta di Keycloak nel formato restituito al client.
@@ -259,7 +227,6 @@ def addUtente(username: str, email: str, password: str):
         )
     except KeycloakError as e:
         print(f"Errore durante la creazione dell'utente su Keycloak: {e}")
-        # Se l'utente esiste già o c'è un errore, blocchiamo la richiesta HTTP
         raise HTTPException(status_code=400, detail="Impossibile creare l'utente. Potrebbe già esistere.")
 
 

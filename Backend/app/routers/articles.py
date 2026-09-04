@@ -27,13 +27,25 @@ async def upload_file(
         description: str = Form(None),
         tags: list[str] = Form(None),
         current_user: dict = Depends(get_current_user)):
-    '''Riceve un: file, immagine di copertina e i metadati manuali e provvede a generare I metadati attraverso
-    L'uso dell'IA e a salvare il file all'interno del blob storage e i metadati all'interno di cosmos.
-    Prima che il file e gli altri dati vengano caricati il sistema effettua un check multiplo.
-    1° sull'esistenza di un titolo uguale
-    2° su una similarità elevata con un altro file
-    3° se l'utente è loggato con  current_user: dict = Depends(get_current_user) '''
-
+    """
+        Endpoint protetto per il caricamento di un nuovo articolo. Riceve il file testuale,
+        un'immagine di copertina e i metadati manuali. Provvede a generare ulteriori metadati
+        tramite IA, salva i file nel Blob Storage, indicizza i frammenti su Azure AI Search
+        e registra il tutto all'interno di Cosmos DB.
+        Effettua tre controlli di validazione prima di procedere:
+        1. Verifica l'assenza di titoli duplicati a sistema.
+        2. Verifica tramite AI Search che non esista un documento troppo simile (similarità vettoriale).
+        3. Verifica che l'utente sia regolarmente autenticato.
+        :param file: Oggetto UploadFile obbligatorio che rappresenta il file dell'articolo.
+        :param cover_image: Oggetto UploadFile opzionale per la copertina.
+        :param title: Stringa contenente il titolo dell'articolo.
+        :param author: Stringa contenente il nome dell'autore.
+        :param category: Lista di stringhe per le categorie di appartenenza.
+        :param description: Stringa per la descrizione manuale.
+        :param tags: Lista di stringhe rappresentanti i tag liberi.
+        :param current_user: Dizionario con i dati dell'utente autenticato.
+        :return dict: Risultato dell'operazione, contenente stato, messaggio e URL (file e cover) generati.
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="nessun file fornito")
 
@@ -110,6 +122,16 @@ async def list_articles(
         skip: int = Query(0, description="Numero di articoli prima di arrivare alla fine"),
         limit: int = Query(10, description= "Numero massimo di elementi da restituire")
 ):
+    """
+        Endpoint per recuperare la lista paginata degli articoli presenti in archivio.
+        Supporta filtri opzionali per categoria e permette di invertire l'ordinamento cronologico.
+
+        :param decreasing: Booleano per impostare l'ordine (True = meno recente, False = più recente).
+        :param category: Stringa opzionale per filtrare gli articoli appartenenti a una specifica categoria.
+        :param skip: Intero che indica l'offset di impaginazione.
+        :param limit: Intero per il limite massimo di documenti restituiti.
+        :return dict: Dizionario con stato, numero di articoli restituiti e la lista completa degli oggetti articolo.
+        """
     articles = get_articles_list(decreasing=decreasing, category=category, skip=skip, limit=limit)
     return{
         "status": "success",
@@ -121,8 +143,11 @@ async def list_articles(
 
 @router.get("/articles/categories", summary="Lista di tutte le categorie disponibili")
 async def list_categories():
-    '''Restituisce l'elenco completo delle categorie salvate, così il frontend
-    non deve mai ricostruirlo interrogando tutti gli articoli.'''
+    """
+        Restituisce l'elenco completo delle categorie salvate a sistema, ottimizzato
+        in modo che il frontend non debba mai ricostruirlo interrogando tutti gli articoli.
+        :return dict: Dizionario con stato, numero di categorie trovate e la relativa lista di stringhe.
+        """
     categories = get_all_categories()
     return {
         "status": "success",
@@ -132,6 +157,13 @@ async def list_categories():
 
 @router.get("/articles/me", summary="Recupera gli articoli dell'utente loggato ")
 async def get_articles_by_user_id(keyword: str = Query(None, description="Parola chiave per la ricerca nella cronologia"),current_user: dict = Depends(get_current_user)):
+    """
+        Endpoint protetto che recupera esclusivamente gli articoli pubblicati dall'utente
+        attualmente loggato. Permette una ricerca testuale rapida (keyword) tra i propri documenti.
+        :param keyword: Stringa opzionale per filtrare i propri documenti per titolo o descrizione.
+        :param current_user: Dizionario con i dati decodificati dell'utente connesso.
+        :return dict: Dizionario con stato, conteggio e lista degli articoli appartenenti all'utente.
+        """
     user_id = current_user.get("sub")
     if not user_id:
         raise HTTPException(status_code=404, detail="Username non esistente")
@@ -145,6 +177,13 @@ async def get_articles_by_user_id(keyword: str = Query(None, description="Parola
 
 @router.get("/articles/{article_id}", summary="Scheda Articolo")
 async def get_article_details(article_id: str ):
+    """
+        Endpoint per recuperare i dettagli completi di un singolo articolo e i suoi
+        relativi frammenti testuali (chunk), partendo dal suo ID univoco.
+
+        :param article_id: Stringa contenente l'ID dell'articolo da consultare.
+        :return dict: Dizionario con lo stato, l'oggetto articolo completo (metadati) e la lista dei chunk.
+    """
     article = get_article_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Articulo non existe")
@@ -158,6 +197,12 @@ async def get_article_details(article_id: str ):
 
 @router.get("/articles/{article_id}/download", summary="Download articolo ")
 async def download_article(article_id: str):
+    """
+        Endpoint per scaricare il file fisico originale dell'articolo ospitato su Blob Storage.
+        Imposta i corretti header HTTP per forzare il download del file sul client.
+        :param article_id: Stringa contenente l'ID dell'articolo da scaricare.
+        :return Response: Oggetto Response di FastAPI configurato per lo streaming binario del file.
+    """
     article = get_article_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Articolo non esistente")
@@ -178,6 +223,12 @@ async def download_article(article_id: str):
 
 @router.get("/articles/{article_id}/cover", summary="Recupera l'immagine di copertina")
 async def get_cover_image(article_id: str):
+    """
+        Endpoint che recupera e serve in streaming l'immagine di copertina di un articolo.
+        Se l'immagine manca o corrisponde a un placeholder, solleva un errore 404 (gestito dal frontend).
+        :param article_id: Stringa che identifica univocamente l'articolo.
+        :return Response: Oggetto Response di FastAPI contenente i byte dell'immagine con il corretto media_type.
+    """
     article = get_article_by_id(article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Articolo non trovato")
@@ -191,6 +242,15 @@ async def get_cover_image(article_id: str):
 
 @router.delete("/articles/{article_id}/delete", summary="Elimina un articolo")
 async def delete_article(article_id: str, current_user: dict = Depends(get_current_user)):
+    """
+        Endpoint protetto per l'eliminazione profonda di un articolo dall'archivio.
+        Verifica che l'utente richiedente sia il proprietario del documento prima di
+        procedere all'eliminazione di: file testuale, immagine di copertina, metadati
+        su Cosmos DB e vettori su Azure AI Search.
+        :param article_id: Stringa che indica l'ID dell'articolo da eliminare.
+        :param current_user: Dizionario con i dati dell'utente autenticato.
+        :return dict: Risposta con lo stato e il messaggio di conferma dell'avvenuta eliminazione.
+    """
     user_id = current_user.get("sub")
     article = get_article_by_id(article_id)
     if not article:
@@ -211,6 +271,15 @@ async def update_article(
         update_data: ArticleUpdateModel,
         current_user: dict = Depends(get_current_user)
 ):
+    """
+        Endpoint protetto per l'aggiornamento dei metadati manuali di un articolo.
+        Esegue il controllo sui permessi utente e applica l'aggiornamento parziale
+        ai campi specificati nel database Cosmos. Registra in automatico eventuali nuove categorie.
+        :param article_id: Stringa che indica l'ID dell'articolo da aggiornare.
+        :param update_data: Modello Pydantic contenente esclusivamente i campi da modificare.
+        :param current_user: Dizionario con i dati dell'utente loggato.
+        :return dict: Dizionario che conferma il successo o segnala se non ci sono state modifiche.
+        """
     user_id = current_user.get("sub")
     existing_article = get_article_by_id(article_id)
     if not existing_article:
